@@ -1,7 +1,12 @@
-"""Middleware base class — the contract every gateway middleware must implement."""
+"""Middleware base class + MiddlewareChain — the contract and execution engine for gateway middleware."""
 
 from abc import ABC, abstractmethod
+from typing import Callable
+
 from shared.models import RequestContext, ResponseContext, StreamChunk, StreamContext
+from shared.logging import get_logger
+
+logger = get_logger()
 
 
 class BlockException(Exception):
@@ -45,4 +50,102 @@ class Middleware(ABC):
         Return the chunk to pass it through, or return None to drop it.
         Default: pass through without modification.
         """
+        return chunk
+
+
+class MiddlewareChain:
+    """Ordered chain of middleware that processes requests and responses.
+
+    Responsibilities:
+    - Maintain sorted list of middleware by priority
+    - Execute on_request chain (request flow: first middleware first)
+    - Execute on_response chain (response flow: last middleware first)
+    - Handle BlockException from any middleware
+    """
+
+    def __init__(self) -> None:
+        self._middlewares: list[Middleware] = []
+
+    def add(self, middleware: Middleware) -> "MiddlewareChain":
+        """Register a middleware and re-sort by priority."""
+        self._middlewares.append(middleware)
+        self._middlewares.sort(key=lambda m: m.priority)
+        return self
+
+    def add_all(self, middlewares: list[Middleware]) -> "MiddlewareChain":
+        """Register multiple middlewares at once."""
+        for mw in middlewares:
+            self.add(mw)
+        return self
+
+    @property
+    def middlewares(self) -> list[Middleware]:
+        return list(self._middlewares)
+
+    async def run_request(self, ctx: RequestContext) -> RequestContext:
+        """Run the request-phase middleware chain.
+
+        Middleware executes in priority order (lowest first).
+        Any middleware can raise BlockException to abort.
+        """
+        for mw in self._middlewares:
+            try:
+                ctx = await mw.on_request(ctx)
+            except BlockException:
+                raise
+            except Exception as e:
+                logger.warning(
+                    "middleware_error",
+                    middleware=type(mw).__name__,
+                    phase="request",
+                    error=str(e),
+                )
+        return ctx
+
+    async def run_response(self, ctx: ResponseContext) -> ResponseContext:
+        """Run the response-phase middleware chain.
+
+        Middleware executes in priority order (lowest first).
+        BlockException is caught and logged but does NOT interrupt the chain
+        (response is already sent, so we only record).
+        """
+        for mw in self._middlewares:
+            try:
+                ctx = await mw.on_response(ctx)
+            except BlockException as e:
+                logger.warning(
+                    "response_blocked_post_factum",
+                    middleware=type(mw).__name__,
+                    rule_id=e.rule_id,
+                    reason=e.reason,
+                )
+            except Exception as e:
+                logger.warning(
+                    "middleware_error",
+                    middleware=type(mw).__name__,
+                    phase="response",
+                    error=str(e),
+                )
+        return ctx
+
+    async def run_stream_chunk(self, chunk: StreamChunk, ctx: StreamContext) -> StreamChunk | None:
+        """Run the streaming chunk through all middleware.
+
+        Each middleware can transform the chunk or return None to drop it.
+        If a middleware returns None, the chunk is discarded silently.
+        """
+        for mw in self._middlewares:
+            try:
+                chunk = await mw.on_stream_chunk(chunk, ctx)
+            except BlockException:
+                return None
+            except Exception as e:
+                logger.warning(
+                    "middleware_error",
+                    middleware=type(mw).__name__,
+                    phase="stream_chunk",
+                    error=str(e),
+                )
+            if chunk is None:
+                return None
         return chunk

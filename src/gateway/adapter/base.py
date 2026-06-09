@@ -1,6 +1,7 @@
 """Protocol Adapter — base class and registry for LLM provider adapters."""
 
 from abc import ABC, abstractmethod
+from typing import Any
 from fastapi import Request
 from shared.models import NormalizedRequest, NormalizedResponse, StreamChunk
 
@@ -23,12 +24,12 @@ class ProtocolAdapter(ABC):
         ...
 
     @abstractmethod
-    async def normalize_request(self, raw_body: dict, headers: dict, path: str) -> NormalizedRequest:
+    async def normalize_request(self, raw_body: dict[str, Any], headers: dict[str, str], path: str) -> NormalizedRequest:
         """Convert provider-specific request to NormalizedRequest."""
         ...
 
     @abstractmethod
-    def normalize_response(self, raw_body: dict) -> NormalizedResponse:
+    def normalize_response(self, raw_body: dict[str, Any]) -> NormalizedResponse:
         """Convert provider-specific response to NormalizedResponse."""
         ...
 
@@ -47,7 +48,7 @@ class ProtocolAdapter(ABC):
         ...
 
     @abstractmethod
-    def get_upstream_headers(self, original_headers: dict, api_key: str) -> dict:
+    def get_upstream_headers(self, original_headers: dict[str, str], api_key: str) -> dict[str, str]:
         """Build headers for the upstream request.
 
         Replace auth headers with real API key, preserve others.

@@ -13,10 +13,10 @@ dependencies = [
     "pydantic-settings>=2.3",
     "aiosqlite>=0.20",
     "presidio-analyzer>=2.2",
-    "yaml-config>=0.1",
     "pyyaml>=6.0",
     "streamlit>=1.35",
     "tiktoken>=0.7",
+    "structlog>=24.0",
 ]
 
 [project.optional-dependencies]
@@ -42,3 +42,6 @@ select = ["E", "F", "I", "N", "W", "UP"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration tests (requires running gateway + API key)",
+]
