@@ -4,6 +4,8 @@ Usage:
     streamlit run dashboard/app.py
 """
 
+import httpx
+import pandas as pd
 import streamlit as st
 
 st.set_page_config(
@@ -15,11 +17,11 @@ st.set_page_config(
 
 # Sidebar navigation
 st.sidebar.title("🛡️ Agent Gateway")
-st.sidebar.caption("v0.1.0 — Sprint 1")
+st.sidebar.caption("v1.0.0 — All Sprints Complete")
 
 page = st.sidebar.radio(
     "Navigation",
-    ["Overview", "Traces"],
+    ["Overview", "Traces", "Guardrails", "Budget", "Eval"],
     index=0,
 )
 
@@ -29,50 +31,157 @@ GATEWAY_API_URL = "http://localhost:8080"
 
 # --- Overview Page ---
 if page == "Overview":
-    st.title("Agent Proxy Gateway")
-    st.markdown("""
-    A transparent proxy gateway that sits between AI Agents and LLM/Tool APIs,
-    providing **observability**, **guardrails**, and **control**.
+    st.title("🛡️ Agent Proxy Gateway")
+    st.markdown(
+        "**Transparent proxy gateway between AI Agents and LLM / Tool APIs** — "
+        "intercepts, traces, guardrails, evaluates, and controls all Agent traffic."
+    )
 
-    ### Current Status (Sprint 1)
-
-    | Component | Status |
-    |-----------|--------|
-    | Proxy Core | ✅ Implemented |
-    | OpenAI Adapter | ✅ Implemented |
-    | Trace Engine (SQLite) | ✅ Implemented |
-    | Guardrails | ⏳ Sprint 2 |
-    | Budget & Rate Control | ⏳ Sprint 3 |
-    | Eval Pipeline | ⏳ Sprint 3 |
-    | Anthropic Adapter | ⏳ Sprint 3 |
-
-    ### Architecture
-    ```
-    Agent → Gateway (Proxy + Middleware) → LLM API
-              ↓
-           Trace Store (SQLite)
-    ```
-    """)
-
-    # Quick health check
-    st.subheader("Gateway Health")
+    # ---------- Live status banner ----------
+    st.divider()
+    status_cols = st.columns(5)
+    health_ok = False
+    health_payload: dict[str, object] = {}
     try:
-        import httpx
-        resp = httpx.get(f"{GATEWAY_API_URL}/health")
+        resp = httpx.get(f"{GATEWAY_API_URL}/health", timeout=3)
         if resp.status_code == 200:
-            st.success(f"Gateway is running: {resp.json()}")
-        else:
-            st.error(f"Gateway returned {resp.status_code}")
+            health_ok = True
+            health_payload = resp.json() if isinstance(resp.json(), dict) else {}
     except Exception:
-        st.warning(f"Cannot reach gateway at {GATEWAY_API_URL}")
+        pass
+
+    with status_cols[0]:
+        st.metric("Gateway", "🟢 Online" if health_ok else "🔴 Offline")
+    with status_cols[1]:
+        st.metric("Host", str(health_payload.get("host", "—")))
+    with status_cols[2]:
+        st.metric("Port", str(health_payload.get("port", "—")))
+    with status_cols[3]:
+        try:
+            stats = httpx.get(f"{GATEWAY_API_URL}/api/traces/stats", timeout=3).json()
+            st.metric("Total Traces", stats.get("total_traces", 0))
+        except Exception:
+            st.metric("Total Traces", "—")
+    with status_cols[4]:
+        try:
+            gr = httpx.get(f"{GATEWAY_API_URL}/api/guardrails/stats", timeout=3).json()
+            st.metric("Guardrail Hits", gr.get("total_hits", 0))
+        except Exception:
+            st.metric("Guardrail Hits", "—")
+
+    if not health_ok:
+        st.warning(
+            f"Cannot reach gateway at `{GATEWAY_API_URL}`. "
+            "Start it with `uv run gateway` in another terminal."
+        )
+
+    # ---------- Request flow (architecture in plain language) ----------
+    st.divider()
+    st.subheader("🔁 Request Flow")
+
+    st.markdown(
+        """
+        Every Agent request passes through **6 stages** before reaching the LLM backend:
+
+        ```
+        Agent SDK → [1] Guardrails (PII / Injection / Content)
+                   → [2] Rate Limit (RPM / TPM sliding window)
+                   → [3] Circuit Breaker (CLOSED → OPEN → HALF_OPEN)
+                   → [4] Protocol Adapter (OpenAI / Anthropic)
+                   → [5] Upstream LLM / Tool API
+                   ← [6] Eval Pipeline (Heuristic + LLM-as-Judge)  ← response
+        ```
+
+        Each stage records data into the **Trace Engine** (SQLite span tree),
+        which is what the rest of this dashboard visualizes.
+        """
+    )
+
+    # ---------- Feature matrix (Sprint status) ----------
+    st.divider()
+    st.subheader("📦 Feature Matrix")
+
+    feature_rows = [
+        # Sprint 1
+        ("Sprint 1", "Transparent Proxy", "✅", "Agent only changes `base_url` — no code changes"),
+        ("Sprint 1", "OpenAI Adapter", "✅", "normalize → forward → normalize"),
+        ("Sprint 1", "Trace Engine", "✅", "trace_id / span_id / span tree → SQLite (aiosqlite)"),
+        # Sprint 2
+        ("Sprint 2", "Anthropic Adapter", "✅", "Path `/v1/messages`, `content_block_delta` SSE parsing"),
+        ("Sprint 2", "PII Guardrail", "✅", "Email / phone / ID / bank card via Presidio + regex"),
+        ("Sprint 2", "Injection Guardrail", "✅", "Pattern + heuristic + confidence score"),
+        ("Sprint 2", "Content Safety", "✅", "Keyword blacklist, action: block / redact / log"),
+        ("Sprint 2", "Policy Hot-Reload", "✅", "YAML + Pydantic, file-watcher auto reload"),
+        # Sprint 3
+        ("Sprint 3", "Sliding Window Rate Limit", "✅", "RPM / TPM per agent × model × provider"),
+        ("Sprint 3", "Token Budget", "✅", "Hourly / daily caps, 80% warning threshold"),
+        ("Sprint 3", "Circuit Breaker", "✅", "Tri-state machine, auto-recovery probe"),
+        ("Sprint 3", "Heuristic Evals", "✅", "Length / repetition / latency / tool-call"),
+        ("Sprint 3", "LLM-as-Judge", "✅", "GPT-4o-mini, async, sampled, relevance / safety / coherence"),
+        # Sprint 4
+        ("Sprint 4", "Dashboard", "✅", "Streamlit: Traces / Guardrails / Budget / Eval / Overview"),
+        ("Sprint 4", "Demo + Seed Scripts", "✅", "`scripts/demo.py` 7-step E2E walkthrough"),
+        ("Sprint 4", "Docker", "✅", "Multi-stage Dockerfile + docker-compose (gateway + dashboard)"),
+        ("Sprint 4", "Documentation", "✅", "Bilingual README (English / 简体中文) + architecture diagram"),
+    ]
+    feature_df = pd.DataFrame(
+        feature_rows, columns=["Sprint", "Feature", "Status", "Description"]
+    )
+    st.dataframe(feature_df, use_container_width=True, hide_index=True)
+
+    # ---------- Middleware priority (key design decision) ----------
+    st.divider()
+    st.subheader("⚙️ Middleware Priority Chain")
+
+    st.markdown(
+        """
+        Middlewares run by **priority number** (lower = earlier, cheaper checks first).
+        This is the core architectural decision — guards must be cheap so they can fail-fast
+        before we spend tokens on the LLM call.
+        """
+    )
+
+    mw_df = pd.DataFrame(
+        [
+            (10, "GuardrailsEngine", "PII redact · injection block · content safety"),
+            (15, "SlidingWindowRateLimiter", "RPM / TPM sliding-window throttling"),
+            (50, "CircuitBreaker", "CLOSED → OPEN → HALF_OPEN, fail-fast on upstream errors"),
+            (90, "EvalPipeline", "Heuristic (sync) + LLM-as-Judge (async)"),
+        ],
+        columns=["Priority", "Middleware", "Responsibility"],
+    )
+    st.dataframe(mw_df, use_container_width=True, hide_index=True)
+
+    # ---------- Quick start (in-app reminder) ----------
+    st.divider()
+    st.subheader("🚀 Quick Start")
+
+    st.code(
+        "# 1. Install dependencies\n"
+        "uv pip install -e \".[dev]\"\n\n"
+        "# 2. Set your API key\n"
+        "export OPENAI_API_KEY=sk-...\n\n"
+        "# 3. Start the gateway\n"
+        "uv run gateway                    # → http://localhost:8080\n\n"
+        "# 4. Start the dashboard (this UI)\n"
+        "uv run streamlit run dashboard/app.py   # → http://localhost:8501\n\n"
+        "# 5. Try it out\n"
+        "curl -X POST http://localhost:8080/v1/chat/completions \\\n"
+        "  -H 'Content-Type: application/json' \\\n"
+        "  -H 'Authorization: Bearer any-key' \\\n"
+        "  -d '{\"model\":\"gpt-4o-mini\",\"messages\":[{\"role\":\"user\",\"content\":\"Hi!\"}]}'",
+        language="bash",
+    )
+
+    st.info(
+        "💡 Use the **sidebar** to drill into specific pages: "
+        "`Traces` to inspect request lifecycles, `Guardrails` to see hit rates, "
+        "`Budget` to track token consumption, and `Eval` to review quality scores."
+    )
 
 
 # --- Traces Page ---
 elif page == "Traces":
-    import httpx
-    import pandas as pd
-    import json
-
     st.title("Traces")
     st.markdown("View and inspect request traces.")
 
@@ -136,9 +245,6 @@ elif page == "Traces":
 
 # --- Guardrails Page ---
 elif page == "Guardrails":
-    import httpx
-    import pandas as pd
-
     st.title("Guardrails")
     st.markdown("Security and safety checks for Agent traffic.")
 
@@ -189,8 +295,6 @@ elif page == "Guardrails":
 
 # --- Budget Page ---
 elif page == "Budget":
-    import httpx
-
     st.title("Budget & Rate Control")
     st.markdown("Token consumption and rate limits.")
 

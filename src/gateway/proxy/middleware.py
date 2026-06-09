@@ -136,7 +136,10 @@ class MiddlewareChain:
         """
         for mw in self._middlewares:
             try:
-                chunk = await mw.on_stream_chunk(chunk, ctx)
+                result: StreamChunk | None = await mw.on_stream_chunk(chunk, ctx)
+                if result is None:
+                    return None
+                chunk = result
             except BlockException:
                 return None
             except Exception as e:

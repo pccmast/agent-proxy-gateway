@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 import uuid
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, cast
 
 from fastapi import Request
 
@@ -158,15 +158,15 @@ class TraceEngine:
 
     # --- Query methods ---
 
-    async def get_trace(self, trace_id: str) -> dict | None:
+    async def get_trace(self, trace_id: str) -> dict[str, object] | None:
         """Get trace metadata."""
         return await self._store.get_trace(trace_id)
 
-    async def list_traces(self, limit: int = 50, offset: int = 0) -> list[dict]:
+    async def list_traces(self, limit: int = 50, offset: int = 0) -> list[dict[str, object]]:
         """List recent traces."""
         return await self._store.list_traces(limit=limit, offset=offset)
 
-    async def get_span_tree(self, trace_id: str) -> dict | None:
+    async def get_span_tree(self, trace_id: str) -> dict[str, object] | None:
         """Get the full span tree for a trace."""
         spans = await self._store.get_spans(trace_id)
         if not spans:
@@ -175,7 +175,7 @@ class TraceEngine:
         root = tree.build()
         return SpanTree.to_dict(root)
 
-    async def get_stats(self, hours: int = 24) -> dict:
+    async def get_stats(self, hours: int = 24) -> dict[str, object]:
         """Get aggregate statistics."""
         return await self._store.get_stats(hours=hours)
 
@@ -200,9 +200,11 @@ class TraceEngine:
         status_priority = {"error": 0, "timeout": 1, "blocked": 2, "ok": 3}
 
         for s in spans:
-            total_tokens += int(s.get("prompt_tokens", 0)) + int(s.get("completion_tokens", 0))
-            total_latency += float(s.get("latency_ms", 0))
-            s_status = s.get("status", "ok")
+            total_tokens += int(cast(int, s.get("prompt_tokens", 0))) + int(
+                cast(int, s.get("completion_tokens", 0))
+            )
+            total_latency += float(cast(float, s.get("latency_ms", 0)))
+            s_status = cast(str, s.get("status", "ok"))
             if status_priority.get(s_status, 3) < status_priority.get(final_status, 3):
                 final_status = s_status
 

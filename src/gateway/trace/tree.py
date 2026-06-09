@@ -2,7 +2,36 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from typing import TypedDict, cast
+
+
+class _SpanRowBase(TypedDict):
+    """Required fields — every span must have at least a span_id."""
+
+    span_id: str
+
+
+class _SpanRow(_SpanRowBase, total=False):
+    """Typed view of a span row coming from the SQLite store.
+
+    All non-base fields are optional (`total=False`) because the store
+    returns `dict[str, object]` from aiosqlite and we want to be
+    defensive against missing columns / nullable fields.
+    """
+
+    trace_id: str
+    parent_span_id: str | None
+    provider: str
+    model: str | None
+    status: str
+    latency_ms: float
+    prompt_tokens: int
+    completion_tokens: int
+    guard_hits: str
+    eval_scores: str
+    created_at: str
 
 
 @dataclass
@@ -33,8 +62,13 @@ class SpanNode:
 class SpanTree:
     """Build a tree of spans from flat span records and compute statistics."""
 
-    def __init__(self, spans: list[dict]) -> None:
-        self._spans = spans
+    def __init__(
+        self,
+        spans: "Iterable[Mapping[str, object]]",
+    ) -> None:
+        # Cast through `object` to satisfy strict type checker (avoids
+        # "incomplete overlap" error between dict[str, object] and TypedDict).
+        self._spans: list[_SpanRow] = [cast(_SpanRow, cast(object, s)) for s in spans]
 
     def build(self) -> SpanNode | None:
         """Build the span tree and return the root node."""
@@ -114,7 +148,7 @@ class SpanTree:
             node.subtree_latency_ms += child.subtree_latency_ms
 
     @staticmethod
-    def to_dict(node: SpanNode | None) -> dict | None:
+    def to_dict(node: SpanNode | None) -> dict[str, object] | None:
         """Serialize a span node tree to nested dict for JSON output."""
         if node is None:
             return None

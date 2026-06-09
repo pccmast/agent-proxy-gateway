@@ -53,7 +53,9 @@ CREATE INDEX IF NOT EXISTS idx_traces_created ON traces(created_at);
 class TraceStore:
     """Async SQLite store for trace and span data."""
 
-    def __init__(self, db_path: str = "data/gateway.db"):
+    db_path: Path
+
+    def __init__(self, db_path: str = "data/gateway.db") -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db: aiosqlite.Connection | None = None
@@ -92,7 +94,7 @@ class TraceStore:
         )
         await self.db.commit()
 
-    async def get_trace(self, trace_id: str) -> dict | None:
+    async def get_trace(self, trace_id: str) -> dict[str, object] | None:
         """Get a single trace by ID."""
         async with self.db.execute(
             "SELECT * FROM traces WHERE trace_id = ?", (trace_id,)
@@ -105,7 +107,7 @@ class TraceStore:
         limit: int = 50,
         offset: int = 0,
         agent_id: str | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, object]]:
         """List traces with optional filtering."""
         if agent_id:
             async with self.db.execute(
@@ -216,7 +218,7 @@ class TraceStore:
         )
         await self.db.commit()
 
-    async def get_spans(self, trace_id: str) -> list[dict]:
+    async def get_spans(self, trace_id: str) -> list[dict[str, object]]:
         """Get all spans for a trace, ordered by creation time."""
         async with self.db.execute(
             "SELECT * FROM spans WHERE trace_id = ? ORDER BY created_at ASC",
@@ -225,7 +227,7 @@ class TraceStore:
             rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
-    async def get_span(self, span_id: str) -> dict | None:
+    async def get_span(self, span_id: str) -> dict[str, object] | None:
         """Get a single span by ID."""
         async with self.db.execute(
             "SELECT * FROM spans WHERE span_id = ?", (span_id,)
@@ -233,7 +235,7 @@ class TraceStore:
             row = await cursor.fetchone()
             return dict(row) if row else None
 
-    async def get_stats(self, hours: int = 24) -> dict:
+    async def get_stats(self, hours: int = 24) -> dict[str, object]:
         """Get aggregate statistics for the last N hours."""
         since = datetime.now(timezone.utc).isoformat()
 

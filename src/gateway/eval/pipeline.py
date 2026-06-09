@@ -5,6 +5,8 @@ Heuristic evals run synchronously in on_response.
 LLM-as-judge evals are queued asynchronously (non-blocking).
 """
 
+from typing import Any, cast
+
 from gateway.proxy.middleware import Middleware
 from shared.models import (
     EvalResult,
@@ -13,7 +15,13 @@ from shared.models import (
     ResponseContext,
 )
 from shared.logging import get_logger
-from .heuristic import ResponseLengthEval, RepetitionEval, LatencyEval, ToolCallEval
+from .heuristic import (
+    HeuristicEvaluator,
+    ResponseLengthEval,
+    RepetitionEval,
+    LatencyEval,
+    ToolCallEval,
+)
 
 logger = get_logger()
 
@@ -31,6 +39,11 @@ class EvalPipeline(Middleware):
     """
 
     priority: int = 90
+    # NOTE: declared as Any on the class (not Protocol) because basedpyright
+    # strict mode rejects Protocol as an instance attribute. The actual
+    # list[HeuristicEvaluator] type is preserved in __init__ assignment.
+    _heuristic_evals: Any
+    _llm_judge: object | None
 
     def __init__(
         self,
@@ -39,12 +52,17 @@ class EvalPipeline(Middleware):
         latency_p99_threshold_ms: float = 5_000.0,
         llm_judge: object | None = None,
     ) -> None:
-        self._heuristic_evals: list[object] = [
-            ResponseLengthEval(max_response_length=max_response_length),
-            RepetitionEval(repetition_threshold=repetition_threshold),
-            LatencyEval(p99_threshold_ms=latency_p99_threshold_ms),
-            ToolCallEval(),
-        ]
+        self._heuristic_evals = cast(
+            list[HeuristicEvaluator],
+            [
+                ResponseLengthEval(max_response_length=max_response_length),
+                RepetitionEval(repetition_threshold=repetition_threshold),
+                LatencyEval(p99_threshold_ms=latency_p99_threshold_ms),
+                ToolCallEval(),
+            ],
+        )
+        # LLM judge uses structural duck typing — store as object and use
+        # cast at call sites to avoid leaking an optional Protocol type
         self._llm_judge = llm_judge
 
     # ---------------------------------------------------------------- Middleware
@@ -83,8 +101,13 @@ class EvalPipeline(Middleware):
         if self._llm_judge:
             try:
                 import asyncio
+                from typing import cast
+                # Imported lazily here to avoid a hard dependency on
+                # llm_judge module when it's not configured
+                from gateway.eval.llm_judge import LLMJudgeEvaluator
+                judge = cast(LLMJudgeEvaluator, self._llm_judge)
                 asyncio.create_task(
-                    self._llm_judge.evaluate(ctx.request, ctx.response, ctx.trace_id)
+                    judge.evaluate(ctx.request, ctx.response, ctx.trace_id)
                 )
             except Exception as e:
                 logger.debug("llm_judge_queue_error", error=str(e))

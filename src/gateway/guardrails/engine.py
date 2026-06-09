@@ -41,7 +41,10 @@ class GuardrailsEngine(Middleware):
 
     priority: int = 10  # Run very early — guardrails before rate limiting, etc.
 
-    def __init__(self, rule_configs: list[dict] | None = None) -> None:
+    def __init__(
+        self,
+        rule_configs: "list[dict[str, object]] | list[dict[str, str | float | bool]] | None" = None,
+    ) -> None:
         self._rules: list[BaseGuardRule] = []
         self._hit_stats: dict[str, int] = {}  # rule_id → hit count
         if rule_configs:
@@ -52,33 +55,51 @@ class GuardrailsEngine(Middleware):
     @classmethod
     def from_policy_store(cls, policy_store: object) -> "GuardrailsEngine":
         """Build a GuardrailsEngine from a PolicyStore."""
-        config = policy_store.guardrails_config()  # type: ignore[union-attr]
+        from typing import cast
+        from gateway.policy.store import PolicyStore
+        config = cast(PolicyStore, policy_store).guardrails_config()
         rule_dicts = [r.model_dump() for r in config.rules]
-        return cls(rule_configs=rule_dicts)
+        return cls(rule_configs=[cast(dict[str, object], rd) for rd in rule_dicts])
 
-    def _load_rules(self, rule_configs: list[dict]) -> None:
+    def _load_rules(
+        self,
+        rule_configs: "list[dict[str, object]] | list[dict[str, str | float | bool]]",
+    ) -> None:
         """Instantiate rules from configuration dicts."""
+        from typing import Any, cast
         self._rules.clear()
         for cfg in rule_configs:
             if not cfg.get("enabled", True):
                 continue
 
-            rule_type = cfg.get("type", "")
+            rule_type = cast(str, cfg.get("type", ""))
             factory = _RULE_FACTORY.get(rule_type)
             if factory is None:
                 logger.warning("unknown_rule_type", type=rule_type, id=cfg.get("id"))
                 continue
 
             try:
-                rule = factory(
-                    confidence_threshold=cfg.get("confidence_threshold", 0.7),
-                    enabled=cfg.get("enabled", True),
-                    **{k: v for k, v in cfg.items()
-                       if k not in ("id", "type", "action", "confidence_threshold", "enabled", "description")
-                       and v is not None},
+                # Build kwargs with explicit casting for known fields; the
+                # rule's __init__ signature is unknown to the type checker
+                # because BaseGuardRule is ABC, so we pass through cast.
+                kwargs: dict[str, object] = {}
+                for k, v in cfg.items():
+                    if k not in (
+                        "id", "type", "action", "confidence_threshold",
+                        "enabled", "description",
+                    ) and v is not None:
+                        kwargs[k] = v
+                # Cast factory to a callable with **kwargs to bypass
+                # type checker's static resolution of BaseGuardRule's
+                # abstract __init__ (which has no confidence_threshold).
+                factory_callable = cast("Any", factory)
+                rule = factory_callable(
+                    confidence_threshold=cast(float, cfg.get("confidence_threshold", 0.7)),
+                    enabled=cast(bool, cfg.get("enabled", True)),
+                    **kwargs,
                 )
-                rule.rule_id = cfg.get("id", rule.rule_id)
-                rule.action = GuardAction(cfg.get("action", rule.action.value))
+                rule.rule_id = cast(str, cfg.get("id", rule.rule_id))
+                rule.action = GuardAction(cast(str, cfg.get("action", rule.action.value)))
                 self._rules.append(rule)
                 logger.debug("guard_rule_loaded", rule_id=rule.rule_id, type=rule_type)
             except Exception as e:
@@ -173,12 +194,12 @@ class GuardrailsEngine(Middleware):
 
         elif result.action == GuardAction.REDACT:
             # Redact in-place
-            if hasattr(ctx, "request") and hasattr(ctx.request, "messages"):
-                apply_redact_to_messages(ctx.request.messages, result.matches)  # type: ignore[arg-type]
-            if hasattr(ctx, "response") and ctx.response.content:  # type: ignore[union-attr]
+            if isinstance(ctx, (RequestContext, StreamContext)):
+                apply_redact_to_messages(ctx.request.messages, result.matches)
+            if isinstance(ctx, ResponseContext) and ctx.response.content:
                 from .action import apply_redact
-                new_content = apply_redact(ctx.response.content, result.matches)  # type: ignore[union-attr]
-                ctx.response.content = new_content  # type: ignore[union-attr]
+                new_content = apply_redact(ctx.response.content, result.matches)
+                ctx.response.content = new_content
 
             logger.info(
                 "guardrail_redact",
@@ -200,7 +221,7 @@ class GuardrailsEngine(Middleware):
     def rules(self) -> list[BaseGuardRule]:
         return list(self._rules)
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> dict[str, int]:
         """Return per-rule hit counts."""
         return {
             r.rule_id: self._hit_stats.get(r.rule_id, 0)

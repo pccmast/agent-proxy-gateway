@@ -20,13 +20,13 @@ class Message(BaseModel):
 class ToolDef(BaseModel):
     name: str
     description: str
-    parameters: dict | None = None
+    parameters: dict[str, object] | None = None
 
 
 class ToolCall(BaseModel):
     id: str
     name: str
-    arguments: dict
+    arguments: dict[str, object]
 
 
 class TokenUsage(BaseModel):
@@ -44,7 +44,7 @@ class NormalizedRequest(BaseModel):
     stream: bool = False
     temperature: float | None = None
     max_tokens: int | None = None
-    raw_body: dict = Field(default_factory=dict)
+    raw_body: dict[str, object] = Field(default_factory=dict)
 
 
 class NormalizedResponse(BaseModel):
@@ -55,17 +55,17 @@ class NormalizedResponse(BaseModel):
     tool_calls: list[ToolCall] | None = None
     usage: TokenUsage | None = None
     finish_reason: str | None = None
-    raw_body: dict = Field(default_factory=dict)
+    raw_body: dict[str, object] = Field(default_factory=dict)
 
 
 class StreamChunk(BaseModel):
     """A single SSE chunk in the stream."""
     delta_content: str | None = None
-    delta_tool_call: dict | None = None
+    delta_tool_call: dict[str, object] | None = None
     usage: TokenUsage | None = None
     finish_reason: str | None = None
     is_done: bool = False
-    raw_data: dict = Field(default_factory=dict)
+    raw_data: dict[str, object] = Field(default_factory=dict)
 
 
 class GuardResult(BaseModel):
@@ -115,7 +115,7 @@ class RequestContext(BaseModel):
     trace_id: str
     span_id: str
     request: NormalizedRequest
-    headers: dict = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
     path: str = ""
     provider: str = ""
     guard_results: list[GuardResult] = Field(default_factory=list)

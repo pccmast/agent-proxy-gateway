@@ -66,7 +66,7 @@ class TokenCounter:
         self._hourly[agent_id] = self._hourly.get(agent_id, 0) + tokens
         self._daily[agent_id] = self._daily.get(agent_id, 0) + tokens
 
-    def check_budget(self, agent_id: str) -> dict:
+    def check_budget(self, agent_id: str) -> dict[str, object]:
         """Check current budget usage and return status.
 
         Returns dict with:
@@ -103,7 +103,7 @@ class TokenCounter:
         else:
             self._hourly.clear()
 
-    def get_status(self) -> list[dict]:
+    def get_status(self) -> list[dict[str, object]]:
         """Get budget status for all tracked agents."""
         agents = set(self._hourly.keys()) | set(self._daily.keys())
         return [self.check_budget(a) for a in agents]

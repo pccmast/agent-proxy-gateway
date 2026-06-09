@@ -1,0 +1,28 @@
+{
+  "include": [
+    "src",
+    "dashboard",
+    "scripts",
+    "tests"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/.venv",
+    "**/node_modules",
+    "data",
+    "list"
+  ],
+  "reportMissingTypeArgument": "error",
+  "reportUnannotatedClassAttribute": "warning",
+  "reportUnusedCallResult": "warning",
+  "reportImplicitStringConcatenation": "warning",
+  "reportAny": "warning",
+  "reportUnknownArgumentType": "warning",
+  "reportUnknownParameterType": "warning",
+  "reportUnknownVariableType": "warning",
+  "reportUnknownMemberType": "warning",
+  "reportTypedDictNotRequiredAccess": "error",
+  "reportInvalidCast": "error",
+  "reportArgumentType": "error",
+  "reportUnusedParameter": "warning"
+}

@@ -6,8 +6,21 @@ They are designed to be fast (O(n) at worst) and non-blocking.
 
 import re
 from collections import Counter
+from typing import Protocol
 
 from shared.models import EvalResult, NormalizedResponse
+
+
+class HeuristicEvaluator(Protocol):
+    """Structural type for all heuristic evaluators.
+
+    Any class with a `name: str` attribute and an `evaluate(response, ...)`
+    method that returns `EvalResult` satisfies this protocol.
+    """
+
+    name: str
+
+    def evaluate(self, response: NormalizedResponse, **kwargs: object) -> EvalResult: ...
 
 
 class ResponseLengthEval:

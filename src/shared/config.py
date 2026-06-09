@@ -8,6 +8,7 @@ class GatewaySettings(BaseSettings):
         env_file=".env",
         env_prefix="GATEWAY_",
         env_file_encoding="utf-8",
+        extra="ignore",
     )
 
     host: str = "0.0.0.0"

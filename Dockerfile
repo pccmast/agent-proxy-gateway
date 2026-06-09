@@ -7,18 +7,23 @@
 #   docker run -p 8080:8080 -e OPENAI_API_KEY=sk-... agent-gateway
 #
 # Or use docker-compose up
-
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system deps
+# Install system deps (use Aliyun Debian mirror for speed in China)
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null || true
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# Configure pip & uv to use Aliyun PyPI mirror (faster in China)
+ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+
+# Install uv via pip
+RUN pip install --no-cache-dir uv
 
 # Install project dependencies (layer caching)
 COPY pyproject.toml ./
