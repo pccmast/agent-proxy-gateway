@@ -210,7 +210,11 @@ def create_app() -> FastAPI:
 def run_server() -> None:
     import uvicorn
     config = load_config()
-    uvicorn.run("gateway.main:create_app", factory=True, host=config.host, port=config.port, reload=True)
+    # reload=True is dev-only and breaks in containers (watcher exits code 0)
+    uvicorn.run("gateway.main:create_app", factory=True, host=config.host, port=config.port)
 
 
 app = create_app()
+
+if __name__ == "__main__":
+    run_server()

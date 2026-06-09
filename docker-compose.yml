@@ -2,7 +2,9 @@ version: "3.8"
 
 services:
   gateway:
-    build: .
+    build:
+      context: .
+      target: gateway
     container_name: agent-gateway
     ports:
       - "8080:8080"
@@ -24,9 +26,10 @@ services:
       start_period: 10s
 
   dashboard:
-    build: .
+    build:
+      context: .
+      target: dashboard
     container_name: agent-gateway-dashboard
-    command: ["streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
     ports:
       - "8501:8501"
     environment:

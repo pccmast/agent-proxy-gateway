@@ -1,50 +1,85 @@
-# Agent Proxy Gateway — Docker image
-# 
+# Agent Proxy Gateway — Multi-stage Dockerfile
+#
+# Stages:
+#   - base      : shared Python base + uv
+#   - gateway   : gateway-only runtime (no streamlit)
+#   - dashboard : dashboard-only runtime (no fastapi/presidio/etc)
+#
+# Mirror / registry configuration is intentionally NOT hardcoded here.
+# Each developer / CI should configure their own registry mirrors
+# (e.g. via Docker Desktop → Settings → Docker Engine, or daemon.json).
+#
 # Build:
-#   docker build -t agent-gateway .
+#   docker build --target gateway   -t agent-gateway:latest .
+#   docker build --target dashboard -t agent-gateway-dashboard:latest .
 #
-# Run:
-#   docker run -p 8080:8080 -e OPENAI_API_KEY=sk-... agent-gateway
-#
-# Or use docker-compose up
-FROM python:3.11-slim
+# Or use docker-compose (selects target automatically).
+
+# ============================================================
+# Base stage — shared by both
+# ============================================================
+FROM python:3.11-slim AS base
 
 WORKDIR /app
 
-# Install system deps (use Aliyun Debian mirror for speed in China)
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
-    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null || true
+# Install system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Configure pip & uv to use Aliyun PyPI mirror (faster in China)
-ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
-ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
-
-# Install uv via pip
+# Install uv
 RUN pip install --no-cache-dir uv
 
-# Install project dependencies (layer caching)
-COPY pyproject.toml ./
-RUN uv pip install --system -e .
+# Runtime environment
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src \
+    GATEWAY_HOST=0.0.0.0 \
+    GATEWAY_PORT=8080 \
+    GATEWAY_CONFIG_DIR=/app/config
 
-# Copy source code
+
+# ============================================================
+# Gateway stage — FastAPI proxy + guardrails + trace + budget + eval
+# ============================================================
+FROM base AS gateway
+
+COPY pyproject.toml ./
+# Install gateway deps (excludes streamlit + pandas which dashboard uses)
+RUN uv pip install --system \
+    "fastapi>=0.110" \
+    "uvicorn[standard]>=0.30" \
+    "httpx[http2]>=0.27" \
+    "pydantic>=2.7" \
+    "pydantic-settings>=2.3" \
+    "aiosqlite>=0.20" \
+    "presidio-analyzer>=2.2" \
+    "pyyaml>=6.0" \
+    "tiktoken>=0.7" \
+    "structlog>=24.0"
+
+# Copy gateway source only
 COPY config/ ./config/
 COPY src/ ./src/
-COPY dashboard/ ./dashboard/
-COPY scripts/ ./scripts/
-
-# Create data directory
 RUN mkdir -p /app/data
 
-# Environment
-ENV PYTHONUNBUFFERED=1
-ENV GATEWAY_HOST=0.0.0.0
-ENV GATEWAY_PORT=8080
-ENV GATEWAY_CONFIG_DIR=/app/config
-
 EXPOSE 8080
-
-# Default command — start gateway
 CMD ["python", "-m", "gateway.main"]
+
+
+# ============================================================
+# Dashboard stage — Streamlit only (small image)
+# ============================================================
+FROM base AS dashboard
+
+# Install dashboard deps only (no fastapi/presidio/tiktoken/aiosqlite)
+RUN uv pip install --system \
+    "streamlit>=1.35" \
+    "httpx>=0.27" \
+    "pandas>=2.0"
+
+# Copy only what dashboard needs
+COPY dashboard/ ./dashboard/
+# Dashboard reads gateway via HTTP, no need to copy config/src
+
+EXPOSE 8501
+CMD ["streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
