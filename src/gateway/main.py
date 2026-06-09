@@ -1,5 +1,11 @@
 """FastAPI application entry point — wires all gateway components together."""
 
+# pyright: reportAny=false, reportUnusedFunction=false, reportUnusedCallResult=false
+# pyright: reportUnusedParameter=false, reportUnknownMemberType=false, reportUnknownVariableType=false
+# Rationale: FastAPI app.state is inherently untyped (dict[str, Any]). Route handlers
+# registered via decorators are "unused" from the linter's perspective but are accessed
+# by FastAPI at runtime. Adding Protocol/TypeVar chains adds complexity without benefit.
+
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager

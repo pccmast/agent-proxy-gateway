@@ -185,3 +185,48 @@ elif page == "Guardrails":
     except Exception as e:
         st.warning(f"Cannot reach gateway at {GATEWAY_API_URL}: {e}")
         st.info("Start the gateway with `uv run gateway` and ensure guardrails are enabled.")
+
+
+# --- Budget Page ---
+elif page == "Budget":
+    import httpx
+
+    st.title("Budget & Rate Control")
+    st.markdown("Token consumption and rate limits.")
+
+    try:
+        resp = httpx.get(f"{GATEWAY_API_URL}/api/budget/status", params={"agent_id": "default"}, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Hourly", f"{data.get('hourly_used', 0):,}")
+                st.progress(min(data.get("hourly_ratio", 0), 1.0))
+            with col2:
+                st.metric("Daily", f"{data.get('daily_used', 0):,}")
+                st.progress(min(data.get("daily_ratio", 0), 1.0))
+            with col3:
+                st.metric("Status", "OK" if data.get("budget_ok") else "EXCEEDED")
+        else:
+            st.info("Budget module not active. Configure budget settings in default.yaml.")
+    except Exception as e:
+        st.warning(f"Cannot reach gateway: {e}")
+
+
+# --- Eval Page ---
+elif page == "Eval":
+    st.title("Eval Pipeline")
+    st.markdown("""
+    Response quality evaluation. Scores are recorded per-trace span.
+
+    | Metric | Type | Description |
+    |--------|------|-------------|
+    | response_length | Heuristic | Abnormal length detection |
+    | repetition | Heuristic | Content repetition detection |
+    | latency | Heuristic | High-latency flagging |
+    | tool_call | Heuristic | Tool call completeness |
+    | relevance | LLM Judge | Response relevance |
+    | safety | LLM Judge | Harmful content detection |
+    | coherence | LLM Judge | Logical structure |
+    """)
+    st.info("Use **Traces** page → select trace → check `eval_scores` in span tree.")

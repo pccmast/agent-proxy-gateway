@@ -51,7 +51,7 @@ class SlidingWindowRateLimiter(Middleware):
         default_tpm: int = 100_000,
         per_model: dict[str, RateLimitConfig] | None = None,
     ) -> None:
-        self._default = RateLimitConfig(rpm=default_rpm, tpm=default_tpm)
+        self._default: RateLimitConfig = RateLimitConfig(rpm=default_rpm, tpm=default_tpm)
         self._per_model: dict[str, RateLimitConfig] = {}
         if per_model:
             self._per_model.update(per_model)
@@ -65,14 +65,13 @@ class SlidingWindowRateLimiter(Middleware):
 
     async def on_request(self, ctx: RequestContext) -> RequestContext:
         agent_id = ctx.headers.get("X-Agent-ID", ctx.headers.get("x-agent-id", "default"))
-        model = ctx.request.model or "unknown"
 
         now = time.monotonic()
 
         # Check agent-level limits
         agent_cfg = self._default  # per-agent uses defaults
         agent_win = self._resolve_agent_window(agent_id)
-        agent_rpm_ok, agent_retry = self._check_rpm(agent_win, agent_cfg, now)
+        agent_rpm_ok, _ = self._check_rpm(agent_win, agent_cfg, now)
         if not agent_rpm_ok:
             raise BlockException(
                 rule_id="rate-limiter",
@@ -111,9 +110,8 @@ class SlidingWindowRateLimiter(Middleware):
             )
             # Post-hoc: we already served the request, but flag it
 
-        # Record and check model-level
+        # Record model-level token window
         model_win = self._resolve_model_window(model)
-        model_cfg = self._per_model.get(model, self._default)
         self._trim_deque_tokens(model_win.tokens, now)
         model_win.tokens.append((now, token_count))
 
@@ -156,7 +154,7 @@ class SlidingWindowRateLimiter(Middleware):
 
     # --------------------------------------------------------------- public API
 
-    def get_status(self) -> dict:
+    def get_status(self) -> dict[str, dict[str, float]]:
         """Return current rate-limit status for all known scopes."""
         now = time.monotonic()
         cutoff = now - 60.0

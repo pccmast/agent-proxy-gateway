@@ -12,7 +12,9 @@ def create_registry() -> AdapterRegistry:
 
     # Import adapters lazily to avoid circular imports
     from .openai import OpenAIAdapter
+    from .anthropic import AnthropicAdapter
 
     registry.register(OpenAIAdapter())
+    registry.register(AnthropicAdapter())
 
     return registry

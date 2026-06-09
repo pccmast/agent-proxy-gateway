@@ -1,0 +1,16 @@
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.venv
+.git
+*.egg-info
+dist/
+build/
+data/*.db
+test_output.txt
+*_new_main.py
+fix_core.py
+_fix_core.py
