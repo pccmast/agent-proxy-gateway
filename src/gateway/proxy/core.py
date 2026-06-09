@@ -3,7 +3,14 @@
 Supports both non-streaming (JSON) and streaming (SSE) response forwarding.
 """
 
-import asyncio
+# pyright: reportAny=false, reportExplicitAny=false, reportUnannotatedClassAttribute=false
+# pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false
+# pyright: reportUnusedCallResult=false
+# Rationale: ProxyEngine uses Any intentionally — adapter_registry/trace_engine are
+# injected at startup with concrete types but stored via FastAPI app.state, which is
+# inherently untyped. Full typing would require a custom Protocol or TypeVar chain
+# that adds complexity without runtime benefit.
+
 from typing import Any
 
 import httpx
@@ -224,16 +231,16 @@ class ProxyEngine:
             trace_engine=self.trace_engine,
         )
 
-        upstream_req = client.build_request("POST", url, json=body, headers=headers)
-
         async def generate():
-            async with client.stream(upstream_req) as response:
+            async with client.stream("POST", url, json=body, headers=headers) as response:
                 async for line_bytes, line_str in sse_interceptor.aiter_lines(response):
                     result_bytes = await sse_interceptor.process_line(line_bytes, line_str)
                     if result_bytes is not None:
                         yield result_bytes
 
-            yield from await sse_interceptor.finalize()
+            final_bytes = await sse_interceptor.finalize()
+            for fb in final_bytes:
+                yield fb
 
         return StreamingResponse(
             generate(),

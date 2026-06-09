@@ -147,43 +147,43 @@ def create_app() -> FastAPI:
     @app.api_route("/api/traces", methods=["GET"], tags=["traces"])
     async def list_traces(limit: int = 50, offset: int = 0):
         e = getattr(app.state, "trace_engine", None)
-        if not e: return JSONResponse(status_code=503, content={"error": "Trace engine not ready"})
+        if not e: return JSONResponse(503, content={"error": "Trace engine not ready"})
         traces = await e.list_traces(limit=limit, offset=offset)
         return {"traces": traces, "count": len(traces)}
 
     @app.api_route("/api/traces/{trace_id}", methods=["GET"], tags=["traces"])
     async def get_trace(trace_id: str):
         e = getattr(app.state, "trace_engine", None)
-        if not e: return JSONResponse(status_code=503, content={"error": "Trace engine not ready"})
+        if not e: return JSONResponse(503, content={"error": "Trace engine not ready"})
         trace = await e.get_trace(trace_id)
-        if not trace: return JSONResponse(status_code=404, content={"error": "Trace not found"})
+        if not trace: return JSONResponse(404, content={"error": "Trace not found"})
         return {"trace": trace, "span_tree": await e.get_span_tree(trace_id)}
 
     @app.api_route("/api/traces/stats", methods=["GET"], tags=["traces"])
     async def get_stats(hours: int = 24):
         e = getattr(app.state, "trace_engine", None)
-        if not e: return JSONResponse(status_code=503, content={"error": "Trace engine not ready"})
+        if not e: return JSONResponse(503, content={"error": "Trace engine not ready"})
         return await e.get_stats(hours=hours)
 
     # Guardrails
     @app.api_route("/api/guardrails/stats", methods=["GET"], tags=["guardrails"])
     async def guardrails_stats():
         ge = getattr(app.state, "guardrails_engine", None)
-        if not ge: return JSONResponse(status_code=503, content={"error": "Guardrails not enabled"})
+        if not ge: return JSONResponse(503, content={"error": "Guardrails not enabled"})
         s = ge.get_stats()
         return {"stats": s, "total_hits": sum(s.values())}
 
     @app.api_route("/api/guardrails/rules", methods=["GET"], tags=["guardrails"])
     async def guardrails_rules():
         ge = getattr(app.state, "guardrails_engine", None)
-        if not ge: return JSONResponse(status_code=503, content={"error": "Guardrails not enabled"})
+        if not ge: return JSONResponse(503, content={"error": "Guardrails not enabled"})
         return {"rules": [{"id": r.rule_id, "action": r.action.value, "enabled": r.enabled} for r in ge.rules]}
 
     # Budget
     @app.api_route("/api/budget/status", methods=["GET"], tags=["budget"])
     async def budget_status(agent_id: str = "default"):
         tc = getattr(app.state, "token_counter", None)
-        if not tc: return JSONResponse(status_code=503, content={"error": "Budget not configured"})
+        if not tc: return JSONResponse(503, content={"error": "Budget not configured"})
         return tc.check_budget(agent_id) if agent_id else {"agents": tc.get_status()}
 
     # Eval
@@ -195,7 +195,7 @@ def create_app() -> FastAPI:
     @app.api_route("/{path:path}", methods=["POST", "GET", "PUT", "DELETE", "PATCH"])
     async def proxy_catchall(request: Request, path: str):
         engine = getattr(app.state, "proxy_engine", None)
-        if not engine: return JSONResponse(status_code=503, content={"error": "Proxy engine not ready"})
+        if not engine: return JSONResponse(503, content={"error": "Proxy engine not ready"})
         return await engine.handle_request(request)
 
     return app

@@ -132,3 +132,56 @@ elif page == "Traces":
             st.error(f"Failed to fetch traces: {resp.status_code}")
     except Exception as e:
         st.warning(f"Cannot reach gateway at {GATEWAY_API_URL}: {e}")
+
+
+# --- Guardrails Page ---
+elif page == "Guardrails":
+    import httpx
+    import pandas as pd
+
+    st.title("Guardrails")
+    st.markdown("Security and safety checks for Agent traffic.")
+
+    try:
+        stats_resp = httpx.get(f"{GATEWAY_API_URL}/api/guardrails/stats", timeout=5)
+        rules_resp = httpx.get(f"{GATEWAY_API_URL}/api/guardrails/rules", timeout=5)
+
+        if stats_resp.status_code == 200 and rules_resp.status_code == 200:
+            stats_data = stats_resp.json()
+            rules_data = rules_resp.json()
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Total Hits", stats_data.get("total_hits", 0))
+            with col2:
+                st.metric("Active Rules", rules_data.get("count", 0))
+
+            st.subheader("Rule Hit Distribution")
+            stats_entries = stats_data.get("stats", {})
+            if stats_entries:
+                chart_data = pd.DataFrame(
+                    {"Rule": list(stats_entries.keys()), "Hits": list(stats_entries.values())}
+                )
+                st.bar_chart(chart_data.set_index("Rule"), use_container_width=True)
+            else:
+                st.info("No guardrail hits recorded yet. Send a request to populate data.")
+
+            st.subheader("Rules")
+            rules = rules_data.get("rules", [])
+            if rules:
+                df = pd.DataFrame(rules)
+                df["enabled"] = df["enabled"].apply(lambda x: "Yes" if x else "No")
+                st.dataframe(
+                    df.rename(columns={
+                        "id": "Rule ID", "action": "Action",
+                        "confidence_threshold": "Threshold", "enabled": "Enabled",
+                    }),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        else:
+            st.error(f"API unavailable: stats={stats_resp.status_code}, rules={rules_resp.status_code}")
+
+    except Exception as e:
+        st.warning(f"Cannot reach gateway at {GATEWAY_API_URL}: {e}")
+        st.info("Start the gateway with `uv run gateway` and ensure guardrails are enabled.")
