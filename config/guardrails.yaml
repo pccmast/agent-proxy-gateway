@@ -1,0 +1,38 @@
+# Guardrails Rules Configuration
+guardrails:
+  enabled: true
+
+  rules:
+    - id: "pii-detection"
+      type: "pii"
+      action: "redact"
+      confidence_threshold: 0.7
+      enabled: true
+      description: "Detect and redact PII (email, phone, ID card, bank card)"
+
+    - id: "injection-detection"
+      type: "injection"
+      action: "block"
+      confidence_threshold: 0.6
+      enabled: true
+      description: "Block prompt injection attempts"
+      patterns:
+        - "ignore previous instructions"
+        - "ignore all previous"
+        - "system override"
+        - "you are now"
+        - "new instructions"
+
+    - id: "content-safety"
+      type: "content"
+      action: "block"
+      enabled: true
+      description: "Block unsafe content (violence, self-harm, illegal)"
+      keywords: []
+
+    - id: "custom-rule"
+      type: "custom"
+      action: "log"
+      pattern: ""
+      enabled: false
+      description: "Template for user-defined regex rules"

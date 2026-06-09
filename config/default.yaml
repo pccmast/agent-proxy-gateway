@@ -1,0 +1,60 @@
+# Gateway Configuration
+proxy:
+  host: "0.0.0.0"
+  port: 8080
+  upstream_timeout: 120
+
+  providers:
+    openai:
+      base_url: "https://api.openai.com"
+      api_key_env: "OPENAI_API_KEY"
+      default_model: "gpt-4o"
+
+    anthropic:
+      base_url: "https://api.anthropic.com"
+      api_key_env: "ANTHROPIC_API_KEY"
+      default_model: "claude-3-opus-20240229"
+
+# Trace Configuration
+trace:
+  db_path: "data/gateway.db"
+  max_span_depth: 10
+
+# Guardrails Configuration — see guardrails.yaml for rules
+guardrails:
+  enabled: true
+
+# Budget & Rate Control
+budget:
+  defaults:
+    max_tokens_per_day: 1000000
+    max_tokens_per_hour: 100000
+    warning_threshold: 0.8
+  agents: {}
+
+rate_limit:
+  defaults:
+    rpm: 60
+    tpm: 100000
+  per_model:
+    "gpt-4o":
+      rpm: 30
+      tpm: 50000
+
+circuit_breaker:
+  failure_threshold: 5
+  recovery_timeout: 30
+  half_open_max_calls: 1
+
+# Eval Pipeline
+eval:
+  heuristic:
+    enabled: true
+    max_response_length: 10000
+    repetition_threshold: 0.3
+    latency_p99_threshold_ms: 5000
+  llm_judge:
+    enabled: false
+    model: "gpt-4o-mini"
+    api_key_env: "EVAL_LLM_API_KEY"
+    sample_rate: 0.1
