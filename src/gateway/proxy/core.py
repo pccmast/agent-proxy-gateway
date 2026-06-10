@@ -103,11 +103,18 @@ class ProxyEngine:
             ctx = await self.middleware_chain.run_request(ctx)
         except BlockException as exc:
             if self.trace_engine and trace_id:
+                from shared.models import GuardHitRecord, SpanFinishParams
+
                 await self.trace_engine.finish_span(
-                    trace_id=trace_id,
-                    span_id=span_id,
-                    status="blocked",
-                    guard_hits=[exc.rule_id],
+                    SpanFinishParams(
+                        trace_id=trace_id,
+                        span_id=span_id,
+                        status="blocked",
+                        guard_hits=[
+                            GuardHitRecord(rule_id=exc.rule_id, action="block")
+                        ],
+                        request_body=raw_body,
+                    )
                 )
             return JSONResponse(
                 status_code=exc.status_code,
@@ -143,10 +150,17 @@ class ProxyEngine:
         except httpx.TimeoutException:
             logger.error("upstream_timeout", upstream_url=upstream_url, trace_id=trace_id)
             if self.trace_engine and trace_id:
+                from shared.models import SpanFinishParams
+
                 await self.trace_engine.finish_span(
-                    trace_id=trace_id,
-                    span_id=span_id,
-                    status="timeout",
+                    SpanFinishParams(
+                        trace_id=trace_id,
+                        span_id=span_id,
+                        status="timeout",
+                        error_message=f"Upstream request timed out after {self.settings.upstream_timeout}s",
+                        request_body=raw_body,
+                        upstream_url=upstream_url,
+                    )
                 )
             return JSONResponse(
                 status_code=504,
@@ -155,10 +169,17 @@ class ProxyEngine:
         except httpx.ConnectError as e:
             logger.error("upstream_connect_error", upstream_url=upstream_url, error=str(e))
             if self.trace_engine and trace_id:
+                from shared.models import SpanFinishParams
+
                 await self.trace_engine.finish_span(
-                    trace_id=trace_id,
-                    span_id=span_id,
-                    status="error",
+                    SpanFinishParams(
+                        trace_id=trace_id,
+                        span_id=span_id,
+                        status="error",
+                        error_message=f"Cannot connect to upstream: {str(e)}",
+                        request_body=raw_body,
+                        upstream_url=upstream_url,
+                    )
                 )
             return JSONResponse(
                 status_code=502,
@@ -200,13 +221,42 @@ class ProxyEngine:
 
         # Finish trace
         if self.trace_engine and ctx.trace_id:
+            from shared.models import (
+                EvalScoreRecord,
+                GuardHitRecord,
+                SpanFinishParams,
+            )
+
             await self.trace_engine.finish_span(
-                trace_id=ctx.trace_id,
-                span_id=ctx.span_id,
-                token_usage=normalized_resp.usage,
-                status="ok",
-                eval_scores={r.name: r.score for r in resp_ctx.eval_results},
-                guard_hits=[g.rule_id for g in resp_ctx.guard_results],
+                SpanFinishParams(
+                    trace_id=ctx.trace_id,
+                    span_id=ctx.span_id,
+                    status="ok",
+                    token_usage=normalized_resp.usage,
+                    finish_reason=normalized_resp.finish_reason,
+                    guard_hits=[
+                        GuardHitRecord(
+                            rule_id=g.rule_id,
+                            action=g.action.value,
+                            matches=g.matches,
+                            confidence=g.confidence,
+                            details=g.details,
+                        )
+                        for g in resp_ctx.guard_results
+                    ],
+                    eval_scores=[
+                        EvalScoreRecord(
+                            name=r.name, score=r.score, details=r.details
+                        )
+                        for r in resp_ctx.eval_results
+                    ],
+                    request_body=ctx.request.raw_body if ctx.request else None,
+                    response_body=normalized_resp.raw_body,
+                    tool_calls=normalized_resp.tool_calls,
+                    temperature=ctx.request.temperature if ctx.request else None,
+                    max_tokens=ctx.request.max_tokens if ctx.request else None,
+                    upstream_url=url,
+                )
             )
 
         return JSONResponse(

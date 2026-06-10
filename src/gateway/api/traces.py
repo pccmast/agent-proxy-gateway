@@ -32,7 +32,7 @@ def create_trace_router(trace_engine: Any) -> APIRouter:
         if trace is None:
             raise HTTPException(status_code=404, detail="Trace not found")
 
-        span_tree = await trace_engine.get_span_tree(trace_id)
+        span_tree = await trace_engine.get_span_tree(trace_id, load_content=True)
         return {"trace": trace, "span_tree": span_tree}
 
     @router.get("/{trace_id}/spans")

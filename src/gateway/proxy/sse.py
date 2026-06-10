@@ -2,9 +2,11 @@
 
 Parses the SSE wire format (data: {...}\n\n), extracts individual chunks,
 runs them through the middleware chain, and re-emits them downstream.
+v2 — added TTFT (Time to First Token) tracking.
 """
 
 import json
+import time
 from typing import Any, AsyncIterator
 
 from shared.models import StreamChunk, StreamContext, TokenUsage
@@ -20,6 +22,7 @@ class SSEInterceptor:
     - Aggregating token usage from the final chunk
     - Calling middleware chain on each chunk
     - Finalizing trace span on stream close
+    - Tracking TTFT (Time to First Token) for streaming performance metrics
     """
 
     def __init__(
@@ -43,6 +46,11 @@ class SSEInterceptor:
         self.guard_results: list[Any] = []
         self.stream_done = False
         self.current_buffer = ""
+
+        # TTFT tracking
+        self._stream_start_time: float = time.monotonic()
+        self._first_token_time: float | None = None
+        self._ttft_ms: float = 0.0
 
     async def aiter_lines(
         self, response: Any
@@ -92,6 +100,12 @@ class SSEInterceptor:
 
         # Accumulate content
         if chunk.delta_content:
+            # Record TTFT on first content-bearing chunk
+            if self._first_token_time is None:
+                self._first_token_time = time.monotonic()
+                self._ttft_ms = (
+                    self._first_token_time - self._stream_start_time
+                ) * 1000.0
             self.accumulated_content += chunk.delta_content
         if chunk.delta_tool_call:
             self.accumulated_tool_calls.append(chunk.delta_tool_call)
@@ -129,7 +143,13 @@ class SSEInterceptor:
         # Build accumulated response for trace recording
         accumulated_content = self.accumulated_content
         if self.trace_engine and self.trace_context.trace_id:
-            from shared.models import NormalizedResponse
+            from shared.models import (
+                EvalScoreRecord,
+                GuardHitRecord,
+                NormalizedResponse,
+                ResponseContext,
+                SpanFinishParams,
+            )
 
             normalized_resp = NormalizedResponse(
                 provider=self.trace_context.provider,
@@ -140,7 +160,6 @@ class SSEInterceptor:
                 raw_body=self.final_chunk_raw,
             )
 
-            from shared.models import ResponseContext
             resp_ctx = ResponseContext(
                 trace_id=self.trace_context.trace_id,
                 span_id=self.trace_context.span_id,
@@ -156,12 +175,32 @@ class SSEInterceptor:
                 pass
 
             await self.trace_engine.finish_span(
-                trace_id=self.trace_context.trace_id,
-                span_id=self.trace_context.span_id,
-                token_usage=self.total_usage,
-                status="ok",
-                guard_hits=[g.rule_id for g in resp_ctx.guard_results],
-                eval_scores={r.name: r.score for r in resp_ctx.eval_results},
+                SpanFinishParams(
+                    trace_id=self.trace_context.trace_id,
+                    span_id=self.trace_context.span_id,
+                    status="ok",
+                    token_usage=self.total_usage,
+                    ttft_ms=self._ttft_ms,
+                    finish_reason=self.finish_reason,
+                    guard_hits=[
+                        GuardHitRecord(
+                            rule_id=g.rule_id,
+                            action=g.action.value,
+                            matches=g.matches,
+                            confidence=g.confidence,
+                            details=g.details,
+                        )
+                        for g in resp_ctx.guard_results
+                    ],
+                    eval_scores=[
+                        EvalScoreRecord(
+                            name=r.name, score=r.score, details=r.details
+                        )
+                        for r in resp_ctx.eval_results
+                    ],
+                    request_body=self.trace_context.request.raw_body,
+                    response_body=self.final_chunk_raw,
+                )
             )
 
         return []
