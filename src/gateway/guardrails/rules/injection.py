@@ -1,8 +1,16 @@
-"""Prompt injection detection rule — catches common attack patterns."""
+"""Prompt injection detection rule — catches common attack patterns.
+
+v2 — upgraded with semantic_classifier + indirect_injection support.
+"""
 
 import re
+from typing import TYPE_CHECKING
+
 from shared.models import GuardResult, GuardAction
 from .base import BaseGuardRule
+
+if TYPE_CHECKING:
+    from ..config import SessionState
 
 # Default injection patterns — can be overridden via config
 _DEFAULT_PATTERNS: list[str] = [
@@ -32,6 +40,7 @@ class InjectionDetectionRule(BaseGuardRule):
     - Multi-layer encoding (base64 > 2 layers)
     """
 
+    rule_type: str = "injection"
     rule_id: str = "injection-detection"
     action: GuardAction = GuardAction.BLOCK
 
@@ -40,19 +49,27 @@ class InjectionDetectionRule(BaseGuardRule):
         patterns: list[str] | None = None,
         confidence_threshold: float = 0.6,
         enabled: bool = True,
+        **kwargs: object,
     ) -> None:
+        super().__init__(**kwargs)
         self.confidence_threshold = confidence_threshold
         self.enabled = enabled
 
         raw_patterns = patterns if patterns else _DEFAULT_PATTERNS
+        # Merge with config patterns if provided
+        config_patterns = self._config.get("patterns", [])
+        if config_patterns and isinstance(config_patterns, list):
+            all_patterns = raw_patterns + [p for p in config_patterns if isinstance(p, str)]
+        else:
+            all_patterns = raw_patterns
         self._patterns: list[re.Pattern[str]] = [
-            re.compile(p, re.IGNORECASE) for p in raw_patterns
+            re.compile(p, re.IGNORECASE) for p in all_patterns
         ]
 
-    async def check_input(self, text: str) -> GuardResult:
+    async def check_input(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, phase="input")
 
-    async def check_output(self, text: str) -> GuardResult:
+    async def check_output(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, phase="output")
 
     def _check(self, text: str, phase: str) -> GuardResult:

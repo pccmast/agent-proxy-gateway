@@ -1,4 +1,4 @@
-"""Guardrail rules module."""
+"""Guardrail rules module — v2 with plugin discovery."""
 
 from .base import BaseGuardRule
 from .pii import PIIDetectionRule

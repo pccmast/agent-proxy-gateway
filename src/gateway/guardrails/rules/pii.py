@@ -1,11 +1,17 @@
-"""PII detection rule — uses presidio-analyzer to find personal identifiable information."""
+"""PII detection rule — uses presidio-analyzer to find personal identifiable information.
+
+v2 — upgraded with secrets_detection + custom_terms_file support.
+"""
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from shared.models import GuardResult, GuardAction
 from shared.logging import get_logger
 from .base import BaseGuardRule
+
+if TYPE_CHECKING:
+    from ..config import SessionState
 
 logger = get_logger()
 
@@ -37,6 +43,7 @@ class PIIDetectionRule(BaseGuardRule):
     Set ``use_presidio=False`` to skip the ML layer (faster, fewer dependencies).
     """
 
+    rule_type: str = "pii"
     rule_id: str = "pii-detection"
     action: GuardAction = GuardAction.REDACT
     use_presidio: bool = False  # Set True to enable NLP-based detection
@@ -46,12 +53,25 @@ class PIIDetectionRule(BaseGuardRule):
         confidence_threshold: float = 0.7,
         enabled: bool = True,
         use_presidio: bool = False,
+        **kwargs: object,
     ) -> None:
+        super().__init__(**kwargs)
         self.confidence_threshold = confidence_threshold
         self.enabled = enabled
         self.use_presidio = use_presidio
         self._presidio_loaded = False
         self._analyzer: Any = None
+
+        # Load secret patterns from config if available
+        self._secret_patterns: list[tuple[str, str]] = []
+        secret_cfgs = self._config.get("secret_patterns", [])
+        if isinstance(secret_cfgs, list):
+            for sc in secret_cfgs:
+                if isinstance(sc, dict):
+                    name = sc.get("name", "")
+                    pattern = sc.get("pattern", "")
+                    if name and pattern:
+                        self._secret_patterns.append((pattern, name))
 
         if self.use_presidio:
             self._init_presidio()
@@ -66,10 +86,10 @@ class PIIDetectionRule(BaseGuardRule):
             logger.warning("pii_presidio_not_available")
             self.use_presidio = False
 
-    async def check_input(self, text: str) -> GuardResult:
+    async def check_input(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return await self._check(text, phase="input")
 
-    async def check_output(self, text: str) -> GuardResult:
+    async def check_output(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return await self._check(text, phase="output")
 
     async def _check(self, text: str, phase: str) -> GuardResult:

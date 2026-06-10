@@ -1,8 +1,13 @@
 """Content safety rule — detects harmful, violent, or illegal content via keyword matching."""
 
 import re
+from typing import TYPE_CHECKING
+
 from shared.models import GuardResult, GuardAction
 from .base import BaseGuardRule
+
+if TYPE_CHECKING:
+    from ..config import SessionState
 
 # Default keywords — categorized for clarity
 _DEFAULT_KEYWORDS: dict[str, list[str]] = {
@@ -36,6 +41,7 @@ class ContentSafetyRule(BaseGuardRule):
     Each match is scored with a category-specific confidence.
     """
 
+    rule_type: str = "content"
     rule_id: str = "content-safety"
     action: GuardAction = GuardAction.BLOCK
 
@@ -44,7 +50,9 @@ class ContentSafetyRule(BaseGuardRule):
         keywords: list[str] | None = None,
         confidence_threshold: float = 0.6,
         enabled: bool = True,
+        **kwargs: object,
     ) -> None:
+        super().__init__(**kwargs)
         self.confidence_threshold = confidence_threshold
         self.enabled = enabled
         kw_list = keywords if keywords else _ALL_KEYWORDS
@@ -55,10 +63,10 @@ class ContentSafetyRule(BaseGuardRule):
             re.IGNORECASE,
         )
 
-    async def check_input(self, text: str) -> GuardResult:
+    async def check_input(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, phase="input")
 
-    async def check_output(self, text: str) -> GuardResult:
+    async def check_output(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, phase="output")
 
     def _check(self, text: str, phase: str) -> GuardResult:
