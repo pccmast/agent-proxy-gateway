@@ -381,6 +381,19 @@ class TraceEngine:
         """获取聚合统计（含 P50/P95/P99/avg_ttft/total_cost）."""
         return await self._store.get_stats(hours=hours)
 
+    async def get_service_quality_stats(self, hours: int = 24) -> dict[str, object]:
+        """获取服务质量聚合指标（TTFT/TPS/空响应率/流式终端率/重复率）."""
+        return await self._store.get_service_quality_stats(hours=hours)
+
+    async def sample_spans(
+        self,
+        hours: int = 24,
+        limit: int = 50,
+        filters: dict[str, object] | None = None,
+    ) -> list[dict[str, object]]:
+        """按条件采样 span 记录."""
+        return await self._store.sample_spans(hours=hours, limit=limit, filters=filters)
+
     # ------------------------------------------------------------------
     # 内部方法
     # ------------------------------------------------------------------

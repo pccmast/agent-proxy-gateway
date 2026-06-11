@@ -638,6 +638,206 @@ class TraceStore:
 
         return result
 
+    # ------------------------------------------------------------------
+    # 服务质量聚合查询 (Quality Metrics)
+    # ------------------------------------------------------------------
+
+    async def get_service_quality_stats(self, hours: int = 24) -> dict[str, object]:
+        """聚合服务质量指标：TTFT/TPS/空响应率/流式终端率/重复率趋势。
+
+        Precondition: hours ∈ [1, 720].
+
+        Returns:
+            {
+                "ttft": {"p50": float, "p95": float, "p99": float},
+                "tps":  {"p50": float, "p95": float, "p99": float},
+                "empty_response_rate": float,
+                "stream_abort_rate": float,
+                "repetition": {"avg_score": float, "low_quality_ratio": float},
+                "total_spans": int,
+            }
+        """
+        since_iso = datetime.now(timezone.utc).isoformat()
+
+        # ── TTFT 分布 ──
+        async with self.db.execute(
+            "SELECT ttft_ms FROM spans WHERE created_at >= ? AND ttft_ms > 0",
+            (since_iso,),
+        ) as cursor:
+            ttft_rows = await cursor.fetchall()
+        ttft_values = sorted(float(r[0]) for r in ttft_rows)
+        ttft = self._calc_percentiles(ttft_values)
+
+        # ── TPS 分布 ──
+        async with self.db.execute(
+            "SELECT completion_tokens, latency_ms FROM spans "
+            "WHERE created_at >= ? AND completion_tokens > 0 AND latency_ms > 0",
+            (since_iso,),
+        ) as cursor:
+            tps_rows = await cursor.fetchall()
+        tps_values = sorted(
+            float(r[0]) / (float(r[1]) / 1000.0) for r in tps_rows if float(r[1]) > 0
+        )
+        tps = self._calc_percentiles(tps_values)
+
+        # ── 空响应率 ──
+        async with self.db.execute(
+            "SELECT "
+            "  COUNT(*) as total, "
+            "  SUM(CASE WHEN completion_tokens = 0 AND finish_reason IS NOT NULL THEN 1 ELSE 0 END) as empty_count "
+            "FROM spans WHERE created_at >= ? AND finish_reason IS NOT NULL",
+            (since_iso,),
+        ) as cursor:
+            empty_row = await cursor.fetchone()
+        total_finished = int(empty_row[0]) if empty_row and empty_row[0] else 0  # type: ignore[index]
+        empty_count = int(empty_row[1]) if empty_row and empty_row[1] else 0  # type: ignore[index]
+        empty_response_rate = empty_count / total_finished if total_finished > 0 else 0.0
+
+        # ── 流式终端率 ──
+        async with self.db.execute(
+            "SELECT "
+            "  COUNT(*) as total_stream, "
+            "  SUM(CASE WHEN finish_reason != 'stop' THEN 1 ELSE 0 END) as abort_count "
+            "FROM spans WHERE created_at >= ? AND is_stream = 1 AND finish_reason IS NOT NULL",
+            (since_iso,),
+        ) as cursor:
+            stream_row = await cursor.fetchone()
+        total_stream = int(stream_row[0]) if stream_row and stream_row[0] else 0  # type: ignore[index]
+        abort_count = int(stream_row[1]) if stream_row and stream_row[1] else 0  # type: ignore[index]
+        stream_abort_rate = abort_count / total_stream if total_stream > 0 else 0.0
+
+        # ── 重复率趋势 ──
+        async with self.db.execute(
+            "SELECT eval_scores_json FROM spans WHERE created_at >= ? AND eval_scores_json != '{}' AND eval_scores_json != '[]'",
+            (since_iso,),
+        ) as cursor:
+            eval_rows = await cursor.fetchall()
+        rep_scores: list[float] = []
+        for row in eval_rows:
+            try:
+                data = json.loads(str(row[0]))
+                if isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict) and item.get("name") in ("repetition", "repetition_score"):
+                            rep_scores.append(float(item.get("score", 0)))
+                elif isinstance(data, dict) and "repetition" in data:
+                    rep_scores.append(float(data["repetition"]))
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
+        avg_repetition = sum(rep_scores) / len(rep_scores) if rep_scores else 1.0
+        low_repetition = sum(1 for s in rep_scores if s < 0.5) / len(rep_scores) if rep_scores else 0.0
+
+        # ── 总 span 数 ──
+        async with self.db.execute(
+            "SELECT COUNT(*) FROM spans WHERE created_at >= ?",
+            (since_iso,),
+        ) as cursor:
+            count_row = await cursor.fetchone()
+        total_spans = int(count_row[0]) if count_row else 0  # type: ignore[index]
+
+        return {
+            "ttft": ttft,
+            "tps": tps,
+            "empty_response_rate": empty_response_rate,
+            "stream_abort_rate": stream_abort_rate,
+            "repetition": {
+                "avg_score": round(avg_repetition, 4),
+                "low_quality_ratio": round(low_repetition, 4),
+            },
+            "total_spans": total_spans,
+        }
+
+    @staticmethod
+    def _calc_percentiles(values: list[float]) -> dict[str, float]:
+        """计算 P50/P95/P99."""
+        n = len(values)
+        if n == 0:
+            return {"p50": 0.0, "p95": 0.0, "p99": 0.0}
+        return {
+            "p50": values[n // 2],
+            "p95": values[int(n * 0.95)],
+            "p99": values[int(n * 0.99)],
+        }
+
+    # ------------------------------------------------------------------
+    # 采样导出
+    # ------------------------------------------------------------------
+
+    async def sample_spans(
+        self,
+        hours: int = 24,
+        limit: int = 50,
+        filters: dict[str, object] | None = None,
+    ) -> list[dict[str, object]]:
+        """按条件采样 span 记录，关联加载 span_contents。
+
+        Args:
+            hours: 时间窗口（小时）
+            limit: 最大返回数量
+            filters: 可选过滤条件。
+                - model: str — 按模型筛选
+                - status: str — 按状态筛选
+                - min_latency_ms: float — 最低延迟
+                - has_guard_hits: bool — 是否有安全命中
+                - has_low_eval: bool — 是否有低分 eval
+
+        Returns:
+            span 记录列表（含关联的 request_body/response_body）。
+        """
+        since_iso = datetime.now(timezone.utc).isoformat()
+        conditions = ["s.created_at >= ?"]
+        params: list[object] = [since_iso]
+
+        if filters:
+            if "model" in filters and filters["model"]:
+                conditions.append("s.model = ?")
+                params.append(filters["model"])
+            if "status" in filters and filters["status"]:
+                conditions.append("s.status = ?")
+                params.append(filters["status"])
+            if "min_latency_ms" in filters and filters["min_latency_ms"]:
+                conditions.append("s.latency_ms >= ?")
+                params.append(float(cast(float, filters["min_latency_ms"])))
+            if filters.get("has_guard_hits"):
+                conditions.append(
+                    "(s.guard_hits_json IS NOT NULL AND s.guard_hits_json != '[]')"
+                )
+            if filters.get("has_low_eval"):
+                conditions.append(
+                    "(s.eval_scores_json IS NOT NULL AND s.eval_scores_json != '{}' AND s.eval_scores_json != '[]')"
+                )
+
+        where_clause = " AND ".join(conditions)
+        params.append(limit)
+
+        async with self.db.execute(
+            f"SELECT s.* FROM spans s WHERE {where_clause} ORDER BY s.created_at DESC LIMIT ?",
+            tuple(params),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+        results = [dict(r) for r in rows]
+
+        # 关联加载 span_contents
+        content_ids = [
+            cid for r in results
+            if (cid := r.get("content_id")) and isinstance(cid, str) and cid
+        ]
+        if content_ids:
+            content_map: dict[str, str] = {}
+            for cid in content_ids:
+                content = await self.get_span_content(cid)
+                if content:
+                    content_map[cid] = content
+            for r in results:
+                cid = r.get("content_id")
+                if cid and cid in content_map:
+                    content = cast(dict[str, object], content_map[cid])
+                    r["request_body"] = content.get("request_body")
+                    r["response_body"] = content.get("response_body")
+
+        return results
+
     async def _query_latency_list(self, since_iso: str) -> list[float]:
         """查询时间窗口内所有 span 的延迟数据（用于百分位计算）。"""
         async with self.db.execute(

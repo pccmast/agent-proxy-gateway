@@ -303,5 +303,8 @@ class TestGuardrailsEngine:
         assert "pii-detection" in stats
         assert "injection-detection" in stats
         assert "content-safety" in stats
-        # All should start at 0
-        assert all(v == 0 for v in stats.values())
+        # All should start at 0 (v2: each value is {"total": N, ...})
+        assert all(
+            isinstance(v, dict) and v.get("total", 0) == 0
+            for v in stats.values()
+        )

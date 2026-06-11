@@ -66,7 +66,8 @@ class GuardrailsEngine(Middleware):
         self._input_rules: list[BaseGuardRule] = []
         self._output_rules: list[BaseGuardRule] = []
         self._behavioral_rules: list[BaseGuardRule] = []
-        self._hit_stats: dict[str, int] = {}
+        self._hit_stats: dict[str, dict[str, int]] = {}  # rule_id → {"block":N, "redact":N, "log":N, "total":N}
+        self._category_stats: dict[str, int] = {}         # category → hit count (violence/self_harm/illegal/hate)
         self._session_store = session_store
         self._audit_logger = audit_logger
 
@@ -275,9 +276,20 @@ class GuardrailsEngine(Middleware):
             return
 
         ctx.guard_results.append(result)
-        self._hit_stats[result.rule_id] = (
-            self._hit_stats.get(result.rule_id, 0) + 1
-        )
+
+        # 记录命中统计（按 action 类型分别计数）
+        rule_stats = self._hit_stats.setdefault(result.rule_id, {"total": 0})
+        rule_stats["total"] = rule_stats.get("total", 0) + 1
+        action_key = result.action.value if hasattr(result.action, "value") else str(result.action)
+        rule_stats[action_key] = rule_stats.get(action_key, 0) + 1
+
+        # 记录内容安全分类统计
+        if result.rule_id == "content-safety" and "category_counts" in result.metadata:
+            cat_counts = result.metadata["category_counts"]
+            if isinstance(cat_counts, dict):
+                for cat, cnt in cat_counts.items():
+                    if isinstance(cat, str) and isinstance(cnt, int):
+                        self._category_stats[cat] = self._category_stats.get(cat, 0) + cnt
 
         # 审计记录
         if self._audit_logger:
@@ -358,9 +370,21 @@ class GuardrailsEngine(Middleware):
     def rules(self) -> list[BaseGuardRule]:
         return list(self._input_rules + self._output_rules + self._behavioral_rules)
 
-    def get_stats(self) -> dict[str, int]:
-        """Return per-rule hit counts."""
+    def get_stats(self) -> dict[str, dict[str, int]]:
+        """Return per-rule hit counts broken down by action type.
+
+        Returns:
+            {rule_id: {"total": N, "block": N, "redact": N, "log": N}}
+        """
         return {
-            r.rule_id: self._hit_stats.get(r.rule_id, 0)
+            r.rule_id: self._hit_stats.get(r.rule_id, {"total": 0})
             for r in self.rules
         }
+
+    def get_category_stats(self) -> dict[str, int]:
+        """Return content safety category hit counts.
+
+        Returns:
+            {"violence": N, "self_harm": N, "illegal": N, "hate": N}
+        """
+        return dict(self._category_stats)

@@ -78,23 +78,30 @@ class ContentSafetyRule(BaseGuardRule):
 
         # Confidence scales with match count and distinct categories hit
         categories_hit = set()
+        category_counts: dict[str, int] = {}
         for m in matches:
             m_lower = m.lower()
             for category, words in _DEFAULT_KEYWORDS.items():
                 if m_lower in words:
                     categories_hit.add(category)
+                    category_counts[category] = category_counts.get(category, 0) + 1
+                    break
 
         base = min(len(matches) * 0.15, 0.4)
         cat_bonus = min(len(categories_hit) * 0.15, 0.3)
         confidence = base + cat_bonus
+
+        # 构建详细的分类型命中信息
+        detail_parts = [f"{cat}={cnt}" for cat, cnt in sorted(category_counts.items())]
+        detail_str = f"[{phase}] {len(matches)} match(es) | " + (
+            ", ".join(detail_parts) if detail_parts else "no category data"
+        )
 
         return GuardResult(
             rule_id=self.rule_id,
             action=self.action,
             matches=matches,
             confidence=confidence,
-            details=(
-                f"[{phase}] {len(matches)} match(es) in {len(categories_hit)} categories: "
-                f"{', '.join(sorted(categories_hit))}"
-            ),
+            details=detail_str,
+            metadata={"category_counts": category_counts},
         )

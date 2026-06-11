@@ -75,6 +75,7 @@ class GuardResult(BaseModel):
     matches: list[str] = Field(default_factory=list)
     confidence: float = 0.0
     details: str = ""
+    metadata: dict[str, object] = Field(default_factory=dict)
 
 
 class EvalResult(BaseModel):

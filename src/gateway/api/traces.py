@@ -51,4 +51,26 @@ def create_trace_router(trace_engine: Any) -> APIRouter:
         stats = await trace_engine.get_stats(hours=hours)
         return stats
 
+    @router.get("/quality-stats")
+    async def get_quality_stats(hours: int = Query(default=24, ge=1, le=720)):
+        """Get service quality metrics: TTFT, TPS, empty rate, stream abort, repetition."""
+        stats = await trace_engine.get_service_quality_stats(hours=hours)
+        return {"hours": hours, "stats": stats}
+
+    @router.get("/samples")
+    async def get_samples(
+        hours: int = Query(default=24, ge=1, le=720),
+        limit: int = Query(default=50, ge=1, le=200),
+        model: str | None = Query(default=None),
+        status: str | None = Query(default=None),
+    ):
+        """Get sampled span records with optional filters."""
+        filters: dict[str, object] = {}
+        if model:
+            filters["model"] = model
+        if status:
+            filters["status"] = status
+        samples = await trace_engine.sample_spans(hours=hours, limit=limit, filters=filters or None)
+        return {"count": len(samples), "samples": samples}
+
     return router
