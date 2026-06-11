@@ -17,13 +17,44 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Global CSS styling
+st.markdown(
+    """
+    <style>
+    .stMetric {
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        padding: 10px;
+        border-left: 4px solid #4CAF50;
+    }
+    .stMetric[data-testid="stMetricLabel"] {
+        font-size: 0.85rem;
+        color: #666;
+    }
+    .stMetric[data-testid="stMetricValue"] {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #333;
+    }
+    .stAlert {
+        border-radius: 8px;
+    }
+    div[data-testid="stDataFrame"] {
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Sidebar navigation
 st.sidebar.title("🛡️ Agent Gateway")
-st.sidebar.caption("v1.0.0 — All Sprints Complete")
+st.sidebar.caption("v1.0.0 — Production Ready")
 
 page = st.sidebar.radio(
     "Navigation",
-    ["Overview", "Traces", "Guardrails", "Budget", "Eval"],
+    ["Overview", "Traces", "Budget", "Eval"],
     index=0,
 )
 
@@ -72,12 +103,86 @@ if page == "Overview":
             st.metric("Guardrail Hits", "—")
 
     if not health_ok:
-        st.warning(
-            f"Cannot reach gateway at `{GATEWAY_API_URL}`.\n\n"
-            f"1. Make sure the gateway is running: `uv run gateway`\n"
-            f"2. Verify the port: `netstat -an | findstr {DEFAULT_GATEWAY_PORT}`\n"
-            f"3. Try: `curl http://127.0.0.1:{DEFAULT_GATEWAY_PORT}/health`"
+        st.error(
+            f"**Gateway Offline** — Cannot reach `{GATEWAY_API_URL}`\n\n"
+            f"**Troubleshooting:**\n"
+            f"1. Start gateway: `uv run gateway`\n"
+            f"2. Verify port: `netstat -an | findstr {DEFAULT_GATEWAY_PORT}`\n"
+            f"3. Test: `curl http://127.0.0.1:{DEFAULT_GATEWAY_PORT}/health`"
         )
+
+    # ---------- Golden Signals ----------
+    st.divider()
+    st.subheader("📊 Golden Signals")
+
+    gs_cols = st.columns(4)
+    with gs_cols[0]:
+        try:
+            stats = httpx.get(f"{GATEWAY_API_URL}/api/traces/stats", timeout=3).json()
+            total = stats.get("total_traces", 0)
+            st.metric("Requests (24h)", f"{total:,}")
+        except Exception:
+            st.metric("Requests (24h)", "—")
+    with gs_cols[1]:
+        try:
+            stats = httpx.get(f"{GATEWAY_API_URL}/api/traces/stats", timeout=3).json()
+            errors = stats.get("error_count", 0)
+            total = stats.get("total_traces", 1)
+            rate = (errors / total * 100) if total > 0 else 0
+            st.metric("Error Rate", f"{rate:.1f}%", delta=f"{errors} errors")
+        except Exception:
+            st.metric("Error Rate", "—")
+    with gs_cols[2]:
+        try:
+            stats = httpx.get(f"{GATEWAY_API_URL}/api/traces/stats", timeout=3).json()
+            p95 = stats.get("p95_latency_ms", 0)
+            st.metric("P95 Latency", f"{p95:.0f} ms")
+        except Exception:
+            st.metric("P95 Latency", "—")
+    with gs_cols[3]:
+        try:
+            budget = httpx.get(f"{GATEWAY_API_URL}/api/budget/status", params={"agent_id": "default"}, timeout=3).json()
+            ratio = budget.get("daily_ratio", 0)
+            st.metric("Daily Budget", f"{ratio*100:.1f}%", delta="OK" if budget.get("budget_ok") else "EXCEEDED")
+        except Exception:
+            st.metric("Daily Budget", "—")
+
+    # ---------- Architecture Diagram ----------
+    st.divider()
+    st.subheader("🏗️ Architecture")
+
+    st.markdown(
+        """
+        ```
+        ┌─────────────┐     ┌─────────────────────────────────────────┐     ┌─────────────┐
+        │   Agent     │────→│  Agent Proxy Gateway                    │────→│   OpenAI    │
+        │   SDK       │     │  ┌─────────┐ ┌─────────┐ ┌───────────┐ │     │   Anthropic │
+        │   (Any)     │     │  │Guardrails│ │Rate Limit│ │Circuit    │ │     │   DeepSeek  │
+        └─────────────┘     │  │Engine    │ │(Sliding) │ │Breaker    │ │     │   ...       │
+                            │  └────┬────┘ └────┬────┘ └─────┬─────┘ │     └─────────────┘
+                            │       │           │            │       │
+                            │  ┌────┴───────────┴────────────┴─────┐ │
+                            │  │         Protocol Adapter           │ │
+                            │  │   OpenAI  ·  Anthropic  ·  SSE    │ │
+                            │  └──────────────────────────────────┘ │
+                            │  ┌──────────────────────────────────┐ │
+                            │  │         Trace Engine            │ │
+                            │  │   SQLite span tree · async      │ │
+                            │  └──────────────────────────────────┘ │
+                            │  ┌──────────────────────────────────┐ │
+                            │  │         Eval Pipeline             │ │
+                            │  │   Heuristic + LLM-as-Judge       │ │
+                            │  └──────────────────────────────────┘ │
+                            └─────────────────────────────────────────┘
+                                           │
+                                           ↓
+                            ┌─────────────────────────────────────────┐
+                            │         Dashboard (This UI)             │
+                            │   Overview · Traces · Budget · Eval     │
+                            └─────────────────────────────────────────┘
+        ```
+        """
+    )
 
     # ---------- Request flow (architecture in plain language) ----------
     st.divider()
@@ -101,85 +206,9 @@ if page == "Overview":
         """
     )
 
-    # ---------- Feature matrix (Sprint status) ----------
-    st.divider()
-    st.subheader("📦 Feature Matrix")
-
-    feature_rows = [
-        # Sprint 1
-        ("Sprint 1", "Transparent Proxy", "✅", "Agent only changes `base_url` — no code changes"),
-        ("Sprint 1", "OpenAI Adapter", "✅", "normalize → forward → normalize"),
-        ("Sprint 1", "Trace Engine", "✅", "trace_id / span_id / span tree → SQLite (aiosqlite)"),
-        # Sprint 2
-        ("Sprint 2", "Anthropic Adapter", "✅", "Path `/v1/messages`, `content_block_delta` SSE parsing"),
-        ("Sprint 2", "PII Guardrail", "✅", "Email / phone / ID / bank card via Presidio + regex"),
-        ("Sprint 2", "Injection Guardrail", "✅", "Pattern + heuristic + confidence score"),
-        ("Sprint 2", "Content Safety", "✅", "Keyword blacklist, action: block / redact / log"),
-        ("Sprint 2", "Policy Hot-Reload", "✅", "YAML + Pydantic, file-watcher auto reload"),
-        # Sprint 3
-        ("Sprint 3", "Sliding Window Rate Limit", "✅", "RPM / TPM per agent × model × provider"),
-        ("Sprint 3", "Token Budget", "✅", "Hourly / daily caps, 80% warning threshold"),
-        ("Sprint 3", "Circuit Breaker", "✅", "Tri-state machine, auto-recovery probe"),
-        ("Sprint 3", "Heuristic Evals", "✅", "Length / repetition / latency / tool-call"),
-        ("Sprint 3", "LLM-as-Judge", "✅", "GPT-4o-mini, async, sampled, relevance / safety / coherence"),
-        # Sprint 4
-        ("Sprint 4", "Dashboard", "✅", "Streamlit: Traces / Guardrails / Budget / Eval / Overview"),
-        ("Sprint 4", "Demo + Seed Scripts", "✅", "`scripts/demo.py` 7-step E2E walkthrough"),
-        ("Sprint 4", "Docker", "✅", "Multi-stage Dockerfile + docker-compose (gateway + dashboard)"),
-        ("Sprint 4", "Documentation", "✅", "Bilingual README (English / 简体中文) + architecture diagram"),
-    ]
-    feature_df = pd.DataFrame(
-        feature_rows, columns=["Sprint", "Feature", "Status", "Description"]
-    )
-    st.dataframe(feature_df, use_container_width=True, hide_index=True)
-
-    # ---------- Middleware priority (key design decision) ----------
-    st.divider()
-    st.subheader("⚙️ Middleware Priority Chain")
-
-    st.markdown(
-        """
-        Middlewares run by **priority number** (lower = earlier, cheaper checks first).
-        This is the core architectural decision — guards must be cheap so they can fail-fast
-        before we spend tokens on the LLM call.
-        """
-    )
-
-    mw_df = pd.DataFrame(
-        [
-            (10, "GuardrailsEngine", "PII redact · injection block · content safety"),
-            (15, "SlidingWindowRateLimiter", "RPM / TPM sliding-window throttling"),
-            (50, "CircuitBreaker", "CLOSED → OPEN → HALF_OPEN, fail-fast on upstream errors"),
-            (90, "EvalPipeline", "Heuristic (sync) + LLM-as-Judge (async)"),
-        ],
-        columns=["Priority", "Middleware", "Responsibility"],
-    )
-    st.dataframe(mw_df, use_container_width=True, hide_index=True)
-
-    # ---------- Quick start (in-app reminder) ----------
-    st.divider()
-    st.subheader("🚀 Quick Start")
-
-    st.code(
-        "# 1. Install dependencies\n"
-        "uv pip install -e \".[dev]\"\n\n"
-        "# 2. Set your API key\n"
-        "export OPENAI_API_KEY=sk-...\n\n"
-        "# 3. Start the gateway\n"
-        f"uv run gateway                    # → http://localhost:{DEFAULT_GATEWAY_PORT}\n\n"
-        "# 4. Start the dashboard (this UI)\n"
-        "uv run streamlit run dashboard/app.py   # → http://localhost:8501\n\n"
-        "# 5. Try it out\n"
-        f"curl -X POST http://localhost:{DEFAULT_GATEWAY_PORT}/v1/chat/completions \\\n"
-        "  -H 'Content-Type: application/json' \\\n"
-        "  -H 'Authorization: Bearer any-key' \\\n"
-        "  -d '{\"model\":\"gpt-4o-mini\",\"messages\":[{\"role\":\"user\",\"content\":\"Hi!\"}]}'",
-        language="bash",
-    )
-
     st.info(
         "💡 Use the **sidebar** to drill into specific pages: "
-        "`Traces` to inspect request lifecycles, `Guardrails` to see hit rates, "
+        "`Traces` to inspect request lifecycles, "
         "`Budget` to track token consumption, and `Eval` to review quality scores."
     )
 
@@ -188,6 +217,15 @@ if page == "Overview":
 elif page == "Traces":
     st.title("Traces")
     st.markdown("View and inspect request traces.")
+
+    # Filters
+    filter_cols = st.columns(3)
+    with filter_cols[0]:
+        status_filter = st.selectbox("Status", ["All", "success", "error", "blocked"], index=0)
+    with filter_cols[1]:
+        agent_filter = st.text_input("Agent ID", placeholder="Filter by agent...")
+    with filter_cols[2]:
+        search_query = st.text_input("Search", placeholder="Trace ID or content...")
 
     try:
         resp = httpx.get(f"{GATEWAY_API_URL}/api/traces", params={"limit": 100})
@@ -198,11 +236,31 @@ elif page == "Traces":
             if not traces:
                 st.info("No traces recorded yet. Send a request through the gateway to populate traces.")
             else:
+                # Apply filters
+                filtered = traces
+                if status_filter != "All":
+                    filtered = [t for t in filtered if t.get("status", "") == status_filter]
+                if agent_filter:
+                    filtered = [t for t in filtered if agent_filter.lower() in t.get("agent_id", "").lower()]
+                if search_query:
+                    filtered = [t for t in filtered if search_query.lower() in t.get("trace_id", "").lower()]
+
+                # Status distribution
+                st.subheader("Status Distribution")
+                status_counts = {}
+                for t in traces:
+                    s = t.get("status", "unknown")
+                    status_counts[s] = status_counts.get(s, 0) + 1
+                if status_counts:
+                    status_df = pd.DataFrame({"Status": list(status_counts.keys()), "Count": list(status_counts.values())})
+                    st.bar_chart(status_df.set_index("Status"), use_container_width=True)
+
                 st.metric("Total Traces", len(traces))
+                st.metric("Filtered Traces", len(filtered))
 
                 # Table view
                 rows = []
-                for t in traces:
+                for t in filtered:
                     rows.append({
                         "Trace ID": t.get("trace_id", "")[:8] + "...",
                         "Agent": t.get("agent_id", "-"),
@@ -219,8 +277,8 @@ elif page == "Traces":
                 st.subheader("Trace Detail")
                 selected = st.selectbox(
                     "Select a trace to inspect",
-                    [t.get("trace_id", "") for t in traces],
-                    format_func=lambda tid: f"{tid[:12]}... — {next((t.get('status','?') for t in traces if t.get('trace_id')==tid),'?')}",
+                    [t.get("trace_id", "") for t in filtered] if filtered else [""],
+                    format_func=lambda tid: f"{tid[:12]}... — {next((t.get('status','?') for t in filtered if t.get('trace_id')==tid),'?')}" if tid else "—",
                 )
 
                 if selected:
@@ -242,88 +300,71 @@ elif page == "Traces":
                             st.subheader("Span Tree")
                             st.json(span_tree, expanded=False)
         else:
-            st.error(f"Failed to fetch traces: {resp.status_code}")
+            st.error(f"Gateway API error: {resp.status_code}. Check gateway logs for details.")
     except Exception as e:
-        st.warning(f"Cannot reach gateway at {GATEWAY_API_URL}: {e}")
-
-
-# --- Guardrails Page ---
-elif page == "Guardrails":
-    st.title("Guardrails")
-    st.markdown("Security and safety checks for Agent traffic.")
-
-    try:
-        stats_resp = httpx.get(f"{GATEWAY_API_URL}/api/guardrails/stats", timeout=5)
-        rules_resp = httpx.get(f"{GATEWAY_API_URL}/api/guardrails/rules", timeout=5)
-
-        if stats_resp.status_code == 200 and rules_resp.status_code == 200:
-            stats_data = stats_resp.json()
-            rules_data = rules_resp.json()
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Total Hits", stats_data.get("total_hits", 0))
-            with col2:
-                st.metric("Active Rules", rules_data.get("count", 0))
-
-            st.subheader("Rule Hit Distribution")
-            stats_entries = stats_data.get("stats", {})
-            if stats_entries:
-                chart_data = pd.DataFrame(
-                    {"Rule": list(stats_entries.keys()), "Hits": list(stats_entries.values())}
-                )
-                st.bar_chart(chart_data.set_index("Rule"), use_container_width=True)
-            else:
-                st.info("No guardrail hits recorded yet. Send a request to populate data.")
-
-            st.subheader("Rules")
-            rules = rules_data.get("rules", [])
-            if rules:
-                df = pd.DataFrame(rules)
-                df["enabled"] = df["enabled"].apply(lambda x: "Yes" if x else "No")
-                st.dataframe(
-                    df.rename(columns={
-                        "id": "Rule ID", "action": "Action",
-                        "confidence_threshold": "Threshold", "enabled": "Enabled",
-                    }),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-        else:
-            st.error(f"API unavailable: stats={stats_resp.status_code}, rules={rules_resp.status_code}")
-
-    except Exception as e:
-        st.warning(f"Cannot reach gateway at {GATEWAY_API_URL}: {e}")
-        st.info("Start the gateway with `uv run gateway` and ensure guardrails are enabled.")
+        st.error(f"Connection failed: {e}. Ensure gateway is running at {GATEWAY_API_URL}.")
 
 
 # --- Budget Page ---
 elif page == "Budget":
-    st.title("Budget & Rate Control")
-    st.markdown("Token consumption and rate limits.")
+    st.title("💰 Budget & Rate Control")
+    st.markdown("Token consumption, rate limits, and budget status.")
+
+    # Agent selector
+    try:
+        agents_resp = httpx.get(f"{GATEWAY_API_URL}/api/agents", timeout=3)
+        agents = ["default"]
+        if agents_resp.status_code == 200:
+            agents_data = agents_resp.json()
+            if isinstance(agents_data, list):
+                agents = agents_data
+        agent_id = st.selectbox("Agent", agents, index=0)
+    except Exception:
+        agent_id = "default"
 
     try:
-        resp = httpx.get(f"{GATEWAY_API_URL}/api/budget/status", params={"agent_id": "default"}, timeout=5)
+        resp = httpx.get(f"{GATEWAY_API_URL}/api/budget/status", params={"agent_id": agent_id}, timeout=5)
         if resp.status_code == 200:
             data = resp.json()
-            col1, col2, col3 = st.columns(3)
+
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.metric("Hourly", f"{data.get('hourly_used', 0):,}")
-                st.progress(min(data.get("hourly_ratio", 0), 1.0))
+                st.metric("Hourly Used", f"{data.get('hourly_used', 0):,}")
             with col2:
-                st.metric("Daily", f"{data.get('daily_used', 0):,}")
-                st.progress(min(data.get("daily_ratio", 0), 1.0))
+                st.metric("Daily Used", f"{data.get('daily_used', 0):,}")
             with col3:
-                st.metric("Status", "OK" if data.get("budget_ok") else "EXCEEDED")
+                st.metric("Hourly Limit", f"{data.get('hourly_limit', 0):,}")
+            with col4:
+                st.metric("Daily Limit", f"{data.get('daily_limit', 0):,}")
+
+            # Progress bars
+            st.subheader("Budget Utilization")
+            h_ratio = min(data.get("hourly_ratio", 0), 1.0)
+            d_ratio = min(data.get("daily_ratio", 0), 1.0)
+
+            h_col, d_col = st.columns(2)
+            with h_col:
+                st.metric("Hourly", f"{h_ratio*100:.1f}%")
+                st.progress(h_ratio)
+            with d_col:
+                st.metric("Daily", f"{d_ratio*100:.1f}%")
+                st.progress(d_ratio)
+
+            # Status
+            if data.get("budget_ok"):
+                st.success("✅ Budget OK — within limits")
+            else:
+                st.error("❌ Budget EXCEEDED — requests may be throttled")
         else:
-            st.info("Budget module not active. Configure budget settings in default.yaml.")
+            st.info("Budget module not active. Configure budget settings in `config/default.yaml`.")
     except Exception as e:
-        st.warning(f"Cannot reach gateway: {e}")
+        st.error(f"Connection failed: {e}. Ensure gateway is running at {GATEWAY_API_URL}.")
 
 
 # --- Eval Page ---
 elif page == "Eval":
-    st.title("Eval Pipeline")
+    st.title("📊 Eval Pipeline")
     st.markdown("""
     Response quality evaluation. Scores are recorded per-trace span.
 
@@ -337,4 +378,56 @@ elif page == "Eval":
     | safety | LLM Judge | Harmful content detection |
     | coherence | LLM Judge | Logical structure |
     """)
-    st.info("Use **Traces** page → select trace → check `eval_scores` in span tree.")
+
+    # Fetch eval stats
+    try:
+        stats_resp = httpx.get(f"{GATEWAY_API_URL}/api/eval/stats", timeout=5)
+        if stats_resp.status_code == 200:
+            eval_data = stats_resp.json()
+
+            # Summary metrics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                total_evals = eval_data.get("total_evaluations", 0)
+                st.metric("Total Evaluations", total_evals)
+            with col2:
+                pass_rate = eval_data.get("pass_rate", 0)
+                st.metric("Pass Rate", f"{pass_rate*100:.1f}%")
+            with col3:
+                avg_score = eval_data.get("average_score", 0)
+                st.metric("Avg Score", f"{avg_score:.2f}")
+
+            # Score distribution
+            st.subheader("Score Distribution")
+            scores = eval_data.get("score_distribution", {})
+            if scores:
+                score_df = pd.DataFrame({
+                    "Score Range": list(scores.keys()),
+                    "Count": list(scores.values())
+                })
+                st.bar_chart(score_df.set_index("Score Range"), use_container_width=True)
+            else:
+                st.info("No evaluation scores recorded yet.")
+
+            # Metric breakdown
+            st.subheader("Metric Breakdown")
+            metrics = eval_data.get("metrics", {})
+            if metrics:
+                metric_rows = []
+                for metric_name, metric_data in metrics.items():
+                    if isinstance(metric_data, dict):
+                        metric_rows.append({
+                            "Metric": metric_name,
+                            "Avg Score": metric_data.get("average", 0),
+                            "Pass Rate": f"{metric_data.get('pass_rate', 0)*100:.1f}%",
+                            "Count": metric_data.get("count", 0),
+                        })
+                if metric_rows:
+                    metric_df = pd.DataFrame(metric_rows)
+                    st.dataframe(metric_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("Eval module not active. Configure eval settings in `config/default.yaml`.")
+    except Exception as e:
+        st.error(f"Connection failed: {e}. Ensure gateway is running at {GATEWAY_API_URL}.")
+
+    st.info("💡 Use **Traces** page → select trace → check `eval_scores` in span tree for detailed per-trace scores.")
