@@ -1,9 +1,9 @@
 Gateway API 测试报告
 Gateway URL: http://127.0.0.1:18080
-OPENAI_API_KEY: 未设置
-测试时间: 2026-06-11 11:38:08
+API_KEY: 已设置
+测试时间: 2026-06-11 13:00:22
 
-总计: 37  |  PASS: 21  |  FAIL: 4  |  SKIP: 12
+总计: 52  |  PASS: 42  |  FAIL: 0  |  SKIP: 10
 
 详细结果:
 [PASS] L1 L1-01: 健康检查
@@ -24,10 +24,10 @@ OPENAI_API_KEY: 未设置
   → 需人工检查日志: providers=['openai', 'anthropic']
 
 [PASS] L2 L2-01: 追踪统计（空库）
-  → total_requests=1
+  → total_requests=109
 
 [PASS] L2 L2-02: 追踪列表（空库）
-  → traces=list, count=1
+  → traces=list, count=50
 
 [PASS] L2 L2-03: 追踪详情（不存在）
   → 返回 404
@@ -35,10 +35,10 @@ OPENAI_API_KEY: 未设置
 [PASS] L2 L2-04: 追踪统计时间窗口
 
 [PASS] L2 L2-05: 追踪列表分页
-  → 返回 1 条 (limit=10)
+  → 返回 10 条 (limit=10)
 
 [PASS] L2 L2-06: 护栏统计
-  → stats=dict, total_hits=0
+  → stats=dict, total_hits=7
 
 [PASS] L2 L2-07: 护栏规则列表
   → rules count=3
@@ -63,11 +63,40 @@ OPENAI_API_KEY: 未设置
 [PASS] L2 L2-14: 指标非空
   → 7 个指标
 
-[SKIP] L3 L3-ALL: 全部代理测试
-  → OPENAI_API_KEY 未设置
+[PASS] L3 L3-01: 非流式聊天补全
+  → choices=1, usage=True
 
-[FAIL] L4 L4-01: PII 检测 → REDACT
-  → status 504
+[PASS] L3 L3-02: 流式聊天补全
+  → Content-Type=text/event-stream; charset=utf-8
+
+[PASS] L3 L3-03: 请求头透传
+  → Authorization 被替换为真实 API key
+
+[PASS] L3 L3-04: 多轮对话
+
+[PASS] L3 L3-05: 非流式请求产生 trace
+  → trace count=10
+
+[PASS] L3 L3-06: trace 字段完整性
+  → 字段完整
+
+[PASS] L3 L3-07: span 树结构
+  → span_tree=存在
+
+[PASS] L3 L3-08: 流式请求产生 trace
+  → trace count=100
+
+[PASS] L3 L3-09: trace 统计更新
+  → total_requests=112
+
+[PASS] L3 L3-10: 正常请求不触发 guard
+  → guard_hits=[]
+
+[PASS] L3 L3-11: 正常请求状态为 ok
+  → status=ok
+
+[PASS] L4 L4-01: PII 检测 → REDACT
+  → trace 中 找到 pii-detection guard hit
 
 [PASS] L4 L4-02: 注入检测 → BLOCK
   → blocked_by=injection-detection
@@ -78,14 +107,14 @@ OPENAI_API_KEY: 未设置
 [SKIP] L4 L4-04: 自定义规则 → BLOCK
   → 当前配置无自定义规则
 
-[FAIL] L4 L4-08: 空请求体
-  → status=504
+[PASS] L4 L4-08: 空请求体
+  → status=400
 
-[FAIL] L4 L4-09: 缺少 messages
-  → status=504
+[PASS] L4 L4-09: 缺少 messages
+  → status=400
 
-[FAIL] L4 L4-10: 无效 JSON
-  → status=504
+[PASS] L4 L4-10: 无效 JSON
+  → status=400
 
 [PASS] L4 L4-11: 未知路径
   → status=404
@@ -111,16 +140,21 @@ OPENAI_API_KEY: 未设置
 [PASS] L4 L4-15: 被 block 请求产生 trace
   → blocked trace count=2
 
-[SKIP] L5 L5-ALL: 全部端到端测试
-  → OPENAI_API_KEY 未设置
+[PASS] L5 L5-01: 混合请求序列
+  → total_requests=121 (expected >=4)
 
+[PASS] L5 L5-01b: 混合请求状态分布
+  → statuses={'ok': 16, 'blocked': 4}
 
-失败的用例:
-  - L4 L4-01: PII 检测 → REDACT
-    → status 504
-  - L4 L4-08: 空请求体
-    → status=504
-  - L4 L4-09: 缺少 messages
-    → status=504
-  - L4 L4-10: 无效 JSON
-    → status=504
+[PASS] L5 L5-02: 并发请求
+  → status codes=[200, 200, 200]
+
+[PASS] L5 L5-02b: 并发请求 trace 记录
+  → trace count=100 (expected >=7)
+
+[PASS] L5 L5-03: 服务持续健康
+  → health status=200
+
+[PASS] L5 L5-04: Dashboard 数据一致性
+  → guardrail_hits=13, blocked_traces=23
+

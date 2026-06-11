@@ -96,7 +96,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     eval_cfg = _policy_store.eval_config()
     llm_judge = None
     if eval_cfg.llm_judge.enabled:
-        api_key = os.environ.get(eval_cfg.llm_judge.api_key_env, os.environ.get("OPENAI_API_KEY", ""))
+        api_key = app.state.settings.eval_llm_api_key
+        if not api_key:
+            # Fallback: read from env var specified in config
+            api_key = os.environ.get(eval_cfg.llm_judge.api_key_env, "")
         if api_key:
             llm_judge = LLMJudgeEvaluator(model=eval_cfg.llm_judge.model, api_key=api_key, sample_rate=eval_cfg.llm_judge.sample_rate)
     _eval_pipeline = EvalPipeline(

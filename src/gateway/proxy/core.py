@@ -75,7 +75,10 @@ class ProxyEngine:
         try:
             raw_body = await request.json()
         except Exception:
-            raw_body = {}
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Invalid JSON in request body"},
+            )
 
         headers = dict(request.headers)
         path = request.url.path
@@ -126,7 +129,7 @@ class ProxyEngine:
         upstream_url = adapter.get_upstream_url(
             path, self._get_base_url(adapter.provider)
         )
-        upstream_headers = adapter.get_upstream_headers(headers, api_key)
+        upstream_headers = adapter.get_upstream_headers(headers, api_key, self._get_base_url(adapter.provider))
 
         logger.info(
             "forwarding_request",
@@ -303,20 +306,17 @@ class ProxyEngine:
         )
 
     def _get_api_key(self, provider: str) -> str:
-        """Get API key for a provider from settings."""
-        if provider == "openai":
-            return self.settings.openai_api_key
-        elif provider == "anthropic":
-            return self.settings.anthropic_api_key
-        return ""
+        """Get API key for a provider from settings (dynamic lookup).
+
+        Uses GatewaySettings.get_api_key() which reads from:
+        1. Direct field (e.g. settings.openai_api_key)
+        2. Fallback to env var specified in YAML config's api_key_env
+        """
+        return self.settings.get_api_key(provider)
 
     def _get_base_url(self, provider: str) -> str:
-        """Get base URL for a provider from settings."""
-        if provider == "openai":
-            return "https://api.openai.com"
-        elif provider == "anthropic":
-            return "https://api.anthropic.com"
-        return ""
+        """Get base URL for a provider from YAML config via settings."""
+        return self.settings.get_base_url(provider)
 
     async def close(self) -> None:
         """Clean up resources."""

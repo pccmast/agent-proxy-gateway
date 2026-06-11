@@ -180,16 +180,26 @@ class OpenAIAdapter(ProtocolAdapter):
         return base_url.rstrip("/") + path
 
     def get_upstream_headers(  # type: ignore[override,unused-ignore]
-        self, original_headers: dict[str, str], api_key: str
+        self, original_headers: dict[str, str], api_key: str, base_url: str = ""
     ) -> dict[str, str]:
-        """Preserve headers but replace Authorization with real API key."""
+        """Preserve headers but replace Authorization with real API key.
+
+        Host header is derived from base_url to support multiple upstream providers.
+        """
         headers = {
             k: v
             for k, v in original_headers.items()
             if k.lower() not in ("host", "authorization", "transfer-encoding")
         }
         headers["Authorization"] = f"Bearer {api_key}"
-        headers["Host"] = "api.openai.com"
+        # Derive Host from base_url (e.g. "https://api.deepseek.com" -> "api.deepseek.com")
+        if base_url:
+            from urllib.parse import urlparse
+            host = urlparse(base_url).netloc
+            if host:
+                headers["Host"] = host
+        else:
+            headers["Host"] = "api.openai.com"
         return headers
 
 
