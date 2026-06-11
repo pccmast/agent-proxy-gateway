@@ -4,7 +4,9 @@ import streamlit as st
 import pandas as pd
 import httpx
 
-GATEWAY_API_URL = "http://localhost:8080"
+from shared.constants import DEFAULT_GATEWAY_URL
+
+GATEWAY_API_URL = DEFAULT_GATEWAY_URL
 
 st.title("Budget & Rate Control")
 

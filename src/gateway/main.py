@@ -147,9 +147,15 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
-        return {"status": "ok", "version": "0.1.0"}
+        return {"status": "ok", "version": "0.1.0", "host": config.host, "port": config.port}
 
     # Traces
+    @app.api_route("/api/traces/stats", methods=["GET"], tags=["traces"])
+    async def get_stats(hours: int = 24):
+        e = getattr(app.state, "trace_engine", None)
+        if not e: return JSONResponse(status_code=503, content={"error": "Trace engine not ready"})
+        return await e.get_stats(hours=hours)
+
     @app.api_route("/api/traces", methods=["GET"], tags=["traces"])
     async def list_traces(limit: int = 50, offset: int = 0):
         e = getattr(app.state, "trace_engine", None)
@@ -165,19 +171,15 @@ def create_app() -> FastAPI:
         if not trace: return JSONResponse(status_code=404, content={"error": "Trace not found"})
         return {"trace": trace, "span_tree": await e.get_span_tree(trace_id)}
 
-    @app.api_route("/api/traces/stats", methods=["GET"], tags=["traces"])
-    async def get_stats(hours: int = 24):
-        e = getattr(app.state, "trace_engine", None)
-        if not e: return JSONResponse(status_code=503, content={"error": "Trace engine not ready"})
-        return await e.get_stats(hours=hours)
-
     # Guardrails
     @app.api_route("/api/guardrails/stats", methods=["GET"], tags=["guardrails"])
     async def guardrails_stats():
         ge = getattr(app.state, "guardrails_engine", None)
         if not ge: return JSONResponse(status_code=503, content={"error": "Guardrails not enabled"})
         s = ge.get_stats()
-        return {"stats": s, "total_hits": sum(s.values())}
+        # v2: stats 结构为 {rule_id: {"total": N, "block": N, ...}}
+        total_hits = sum(v.get("total", 0) for v in s.values())
+        return {"stats": s, "total_hits": total_hits}
 
     @app.api_route("/api/guardrails/rules", methods=["GET"], tags=["guardrails"])
     async def guardrails_rules():

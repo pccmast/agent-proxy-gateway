@@ -7,6 +7,8 @@ These tests use the FastAPI TestClient to simulate real requests.
 import pytest
 import os
 
+from shared.constants import DEFAULT_GATEWAY_URL, DEFAULT_GATEWAY_PORT
+
 # Ensure OPENAI_API_KEY is available for integration tests
 # Skip if no API key configured
 pytestmark = [
@@ -20,13 +22,13 @@ pytestmark = [
 
 @pytest.fixture
 def gateway_url():
-    return os.environ.get("GATEWAY_URL", "http://localhost:8080")
+    return os.environ.get("GATEWAY_URL", DEFAULT_GATEWAY_URL)
 
 
 class TestGatewayIntegration:
     """End-to-end integration tests against the running gateway.
 
-    Requires a running gateway instance on localhost:8080
+    Requires a running gateway instance on localhost:{DEFAULT_GATEWAY_PORT}
     and a valid OPENAI_API_KEY.
     """
 

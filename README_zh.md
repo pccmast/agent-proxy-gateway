@@ -68,7 +68,7 @@ export OPENAI_API_KEY=sk-your-key
 
 # 启动网关
 uv run gateway
-# → http://localhost:8080
+# → http://localhost:18080
 
 # （可选）启动仪表盘
 uv run streamlit run dashboard/app.py
@@ -79,16 +79,16 @@ uv run streamlit run dashboard/app.py
 
 ```bash
 # 健康检查
-curl http://localhost:8080/health
+curl http://localhost:18080/health
 
 # 代理一个对话补全请求
-curl -X POST http://localhost:8080/v1/chat/completions \
+curl -X POST http://localhost:18080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer any-key" \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"你好！"}],"max_tokens":10}'
 
 # 查看追踪记录
-curl http://localhost:8080/api/traces
+curl http://localhost:18080/api/traces
 
 # 运行演示
 uv run python scripts/demo.py
@@ -104,7 +104,7 @@ uv run python scripts/seed_data.py --count 50
 
 ```bash
 docker-compose up -d
-# 网关: http://localhost:8080
+# 网关: http://localhost:18080
 # 仪表盘: http://localhost:8501
 ```
 

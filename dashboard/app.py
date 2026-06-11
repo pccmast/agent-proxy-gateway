@@ -8,6 +8,8 @@ import httpx
 import pandas as pd
 import streamlit as st
 
+from shared.constants import DEFAULT_GATEWAY_URL, DEFAULT_GATEWAY_PORT
+
 st.set_page_config(
     page_title="Agent Gateway Dashboard",
     page_icon="🛡️",
@@ -26,7 +28,7 @@ page = st.sidebar.radio(
 )
 
 # Config — update this to match your gateway URL
-GATEWAY_API_URL = "http://localhost:8080"
+GATEWAY_API_URL = DEFAULT_GATEWAY_URL
 
 
 # --- Overview Page ---
@@ -71,8 +73,10 @@ if page == "Overview":
 
     if not health_ok:
         st.warning(
-            f"Cannot reach gateway at `{GATEWAY_API_URL}`. "
-            "Start it with `uv run gateway` in another terminal."
+            f"Cannot reach gateway at `{GATEWAY_API_URL}`.\n\n"
+            f"1. Make sure the gateway is running: `uv run gateway`\n"
+            f"2. Verify the port: `netstat -an | findstr {DEFAULT_GATEWAY_PORT}`\n"
+            f"3. Try: `curl http://127.0.0.1:{DEFAULT_GATEWAY_PORT}/health`"
         )
 
     # ---------- Request flow (architecture in plain language) ----------
@@ -162,11 +166,11 @@ if page == "Overview":
         "# 2. Set your API key\n"
         "export OPENAI_API_KEY=sk-...\n\n"
         "# 3. Start the gateway\n"
-        "uv run gateway                    # → http://localhost:8080\n\n"
+        f"uv run gateway                    # → http://localhost:{DEFAULT_GATEWAY_PORT}\n\n"
         "# 4. Start the dashboard (this UI)\n"
         "uv run streamlit run dashboard/app.py   # → http://localhost:8501\n\n"
         "# 5. Try it out\n"
-        "curl -X POST http://localhost:8080/v1/chat/completions \\\n"
+        f"curl -X POST http://localhost:{DEFAULT_GATEWAY_PORT}/v1/chat/completions \\\n"
         "  -H 'Content-Type: application/json' \\\n"
         "  -H 'Authorization: Bearer any-key' \\\n"
         "  -d '{\"model\":\"gpt-4o-mini\",\"messages\":[{\"role\":\"user\",\"content\":\"Hi!\"}]}'",

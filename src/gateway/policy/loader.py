@@ -6,6 +6,7 @@ Mismatches between config and schema produce clear, early errors.
 
 from pydantic import BaseModel, Field
 from shared.models import GuardAction
+from shared.constants import DEFAULT_GATEWAY_HOST, DEFAULT_GATEWAY_PORT
 
 
 class ProviderConfig(BaseModel):
@@ -17,8 +18,8 @@ class ProviderConfig(BaseModel):
 
 class ProxyConfig(BaseModel):
     """Proxy-level configuration."""
-    host: str = "0.0.0.0"
-    port: int = 8080
+    host: str = DEFAULT_GATEWAY_HOST
+    port: int = DEFAULT_GATEWAY_PORT
     upstream_timeout: int = 120
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
 

@@ -1,0 +1,54 @@
+INFO:     Started server process [38456]
+INFO:     Waiting for application startup.
+2026-06-11T03:12:12.044928Z [info     ] policy_loaded                  guardrail_rules=4
+2026-06-11T03:12:12.102527Z [info     ] trace_store_initialized        db_path=data\gateway.db
+2026-06-11T03:12:12.125065Z [info     ] guardrails_engine_v2_loaded    behavioral_count=0 input_count=3 output_count=0
+2026-06-11T03:12:12.125371Z [info     ] gateway_initialized            providers=['openai', 'anthropic']
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:18080 (Press CTRL+C to quit)
+INFO:     127.0.0.1:5225 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3523 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3524 - "GET /api/traces/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3525 - "GET /api/guardrails/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3526 - "GET /api/budget/status?agent_id=default HTTP/1.1" 200 OK
+INFO:     127.0.0.1:14379 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:14380 - "GET /api/traces/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:14381 - "GET /api/guardrails/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9508 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9509 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9510 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9511 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9512 - "GET /api/traces/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9513 - "GET /api/traces HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9514 - "GET /api/traces/fake-id-12345 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:9515 - "GET /api/traces/stats?hours=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9516 - "GET /api/traces?limit=10&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9517 - "GET /api/guardrails/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9518 - "GET /api/guardrails/rules HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9519 - "GET /api/guardrails/rules HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9520 - "GET /api/guardrails/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9521 - "GET /api/budget/status?agent_id=default HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9522 - "GET /api/budget/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9523 - "GET /api/budget/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9524 - "GET /api/eval/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9525 - "GET /api/eval/metrics HTTP/1.1" 200 OK
+2026-06-11T03:37:27.014749Z [info     ] guardrail_redact               match_count=2 rule_id=pii-detection
+2026-06-11T03:37:27.015248Z [info     ] forwarding_request             model=gpt-4o-mini provider=openai stream=False trace_id=f7fb5ed2-bfc8-49b3-b1b8-3a7a80a450da upstream_url=https://api.openai.com/v1/chat/completions
+2026-06-11T03:37:37.397103Z [error    ] upstream_timeout               trace_id=f7fb5ed2-bfc8-49b3-b1b8-3a7a80a450da upstream_url=https://api.openai.com/v1/chat/completions
+INFO:     127.0.0.1:9526 - "POST /v1/chat/completions HTTP/1.1" 504 Gateway Timeout
+2026-06-11T03:37:37.485908Z [warning  ] guardrail_block                confidence=0.66 matches=['ignore all previous instructions', 'ignore all previous', 'you are now'] medium=input rule_id=injection-detection
+INFO:     127.0.0.1:9536 - "POST /v1/chat/completions HTTP/1.1" 403 Forbidden
+2026-06-11T03:37:37.596196Z [warning  ] guardrail_block                confidence=0.3 matches=['murder'] medium=input rule_id=content-safety
+INFO:     127.0.0.1:9537 - "POST /v1/chat/completions HTTP/1.1" 403 Forbidden
+2026-06-11T03:37:37.720002Z [info     ] forwarding_request             model= provider=openai stream=False trace_id=3ee2411e-0000-416b-90ed-86d48e3912c8 upstream_url=https://api.openai.com/v1/chat/completions
+2026-06-11T03:37:47.739466Z [error    ] upstream_timeout               trace_id=3ee2411e-0000-416b-90ed-86d48e3912c8 upstream_url=https://api.openai.com/v1/chat/completions
+INFO:     127.0.0.1:9538 - "POST /v1/chat/completions HTTP/1.1" 504 Gateway Timeout
+2026-06-11T03:37:47.868585Z [info     ] forwarding_request             model=gpt-4o provider=openai stream=False trace_id=bed9f8a3-28f8-4678-8433-014c4f663e86 upstream_url=https://api.openai.com/v1/chat/completions
+2026-06-11T03:37:57.903206Z [error    ] upstream_timeout               trace_id=bed9f8a3-28f8-4678-8433-014c4f663e86 upstream_url=https://api.openai.com/v1/chat/completions
+INFO:     127.0.0.1:9550 - "POST /v1/chat/completions HTTP/1.1" 504 Gateway Timeout
+2026-06-11T03:37:58.021242Z [info     ] forwarding_request             model= provider=openai stream=False trace_id=3f1a36ae-cb60-4a98-9f77-369aff19c608 upstream_url=https://api.openai.com/v1/chat/completions
+2026-06-11T03:38:08.037381Z [error    ] upstream_timeout               trace_id=3f1a36ae-cb60-4a98-9f77-369aff19c608 upstream_url=https://api.openai.com/v1/chat/completions
+INFO:     127.0.0.1:8093 - "POST /v1/chat/completions HTTP/1.1" 504 Gateway Timeout
+2026-06-11T03:38:08.116758Z [warning  ] no_adapter                     method=POST path=/v1/unknown/path
+INFO:     127.0.0.1:14356 - "POST /v1/unknown/path HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:14358 - "GET /api/traces?limit=10 HTTP/1.1" 200 OK

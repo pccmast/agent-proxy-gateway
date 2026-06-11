@@ -26,7 +26,9 @@ from typing import Any
 
 import httpx
 
-GATEWAY_URL = "http://localhost:8080"
+from shared.constants import DEFAULT_GATEWAY_URL
+
+GATEWAY_URL = DEFAULT_GATEWAY_URL
 AGENT_ID = f"demo-agent-{uuid.uuid4().hex[:6]}"
 
 HEADERS = {

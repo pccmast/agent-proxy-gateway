@@ -68,7 +68,7 @@ export OPENAI_API_KEY=sk-your-key
 
 # Start gateway
 uv run gateway
-# → http://localhost:8080
+# → http://localhost:18080
 
 # (Optional) Start dashboard
 uv run streamlit run dashboard/app.py
@@ -79,16 +79,16 @@ uv run streamlit run dashboard/app.py
 
 ```bash
 # Health check
-curl http://localhost:8080/health
+curl http://localhost:18080/health
 
 # Proxy a chat completion
-curl -X POST http://localhost:8080/v1/chat/completions \
+curl -X POST http://localhost:18080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer any-key" \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello!"}],"max_tokens":10}'
 
 # Check traces
-curl http://localhost:8080/api/traces
+curl http://localhost:18080/api/traces
 
 # Run demo
 uv run python scripts/demo.py
@@ -104,7 +104,7 @@ uv run python scripts/seed_data.py --count 50
 
 ```bash
 docker-compose up -d
-# Gateway: http://localhost:8080
+# Gateway: http://localhost:18080
 # Dashboard: http://localhost:8501
 ```
 

@@ -7,7 +7,9 @@ import streamlit as st
 import pandas as pd
 import httpx
 
-GATEWAY_API_URL = "http://localhost:8080"
+from shared.constants import DEFAULT_GATEWAY_URL
+
+GATEWAY_API_URL = DEFAULT_GATEWAY_URL
 
 st.title("Guardrails Dashboard")
 st.markdown("Monitor guardrail rule hits and active rules.")
@@ -31,9 +33,18 @@ try:
         with col2:
             stats_entries = stats_data.get("stats", {})
             if stats_entries:
-                chart_data = pd.DataFrame(
-                    {"rule_id": list(stats_entries.keys()), "hits": list(stats_entries.values())}
-                )
+                # v2: stats 结构为 {rule_id: {"total": N, "block": N, ...}}
+                # 取 total 字段作为 Y 轴
+                if isinstance(next(iter(stats_entries.values()), None), dict):
+                    chart_rows = [
+                        {"rule_id": k, "hits": v.get("total", 0) if isinstance(v, dict) else v}
+                        for k, v in stats_entries.items()
+                    ]
+                else:
+                    chart_rows = [
+                        {"rule_id": k, "hits": v} for k, v in stats_entries.items()
+                    ]
+                chart_data = pd.DataFrame(chart_rows)
                 st.bar_chart(chart_data.set_index("rule_id"), use_container_width=True)
             else:
                 st.info("No guardrail hits recorded yet.")

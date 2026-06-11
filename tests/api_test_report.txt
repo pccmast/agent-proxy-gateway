@@ -1,0 +1,126 @@
+Gateway API 测试报告
+Gateway URL: http://127.0.0.1:18080
+OPENAI_API_KEY: 未设置
+测试时间: 2026-06-11 11:38:08
+
+总计: 37  |  PASS: 21  |  FAIL: 4  |  SKIP: 12
+
+详细结果:
+[PASS] L1 L1-01: 健康检查
+  → status=ok, port=18080
+
+[PASS] L1 L1-02: 健康检查字段完整性
+
+[PASS] L1 L1-03: 端口一致性验证
+  → health 报告 port=18080, 实际 URL 端口=18080
+
+[SKIP] L1 L1-04: 数据库初始化
+  → 需人工检查日志: trace_store_initialized
+
+[SKIP] L1 L1-05: 配置加载
+  → 需人工检查日志: policy_loaded, gateway_initialized
+
+[SKIP] L1 L1-06: 适配器注册
+  → 需人工检查日志: providers=['openai', 'anthropic']
+
+[PASS] L2 L2-01: 追踪统计（空库）
+  → total_requests=1
+
+[PASS] L2 L2-02: 追踪列表（空库）
+  → traces=list, count=1
+
+[PASS] L2 L2-03: 追踪详情（不存在）
+  → 返回 404
+
+[PASS] L2 L2-04: 追踪统计时间窗口
+
+[PASS] L2 L2-05: 追踪列表分页
+  → 返回 1 条 (limit=10)
+
+[PASS] L2 L2-06: 护栏统计
+  → stats=dict, total_hits=0
+
+[PASS] L2 L2-07: 护栏规则列表
+  → rules count=3
+
+[PASS] L2 L2-08: 规则字段完整性
+  → 3 条规则字段完整
+
+[PASS] L2 L2-09: 统计 v2 结构
+  → 3 条规则统计
+
+[PASS] L2 L2-10: 预算状态（默认 agent）
+  → hourly_used=0, budget_ok=True
+
+[PASS] L2 L2-11: 预算状态字段完整性
+  → 所有字段存在
+
+[PASS] L2 L2-12: 预算状态（无 agent 参数）
+
+[PASS] L2 L2-13: 评估指标列表
+  → metrics=list
+
+[PASS] L2 L2-14: 指标非空
+  → 7 个指标
+
+[SKIP] L3 L3-ALL: 全部代理测试
+  → OPENAI_API_KEY 未设置
+
+[FAIL] L4 L4-01: PII 检测 → REDACT
+  → status 504
+
+[PASS] L4 L4-02: 注入检测 → BLOCK
+  → blocked_by=injection-detection
+
+[PASS] L4 L4-03: 内容安全 → BLOCK
+  → blocked_by=content-safety
+
+[SKIP] L4 L4-04: 自定义规则 → BLOCK
+  → 当前配置无自定义规则
+
+[FAIL] L4 L4-08: 空请求体
+  → status=504
+
+[FAIL] L4 L4-09: 缺少 messages
+  → status=504
+
+[FAIL] L4 L4-10: 无效 JSON
+  → status=504
+
+[PASS] L4 L4-11: 未知路径
+  → status=404
+
+[SKIP] L4 L4-05: 上游超时
+  → 需手动设置极小 timeout 或断网
+
+[SKIP] L4 L4-06: 上游连接失败
+  → 需手动配置错误的上游 URL
+
+[SKIP] L4 L4-07: 无效模型
+  → 需依赖上游返回错误
+
+[SKIP] L4 L4-12: RPM 超限
+  → 需短时间内发送 >60 请求
+
+[SKIP] L4 L4-13: Token 预算耗尽
+  → 需累计超过日限额
+
+[SKIP] L4 L4-14: 熔断器 OPEN
+  → 需连续 5 次上游失败
+
+[PASS] L4 L4-15: 被 block 请求产生 trace
+  → blocked trace count=2
+
+[SKIP] L5 L5-ALL: 全部端到端测试
+  → OPENAI_API_KEY 未设置
+
+
+失败的用例:
+  - L4 L4-01: PII 检测 → REDACT
+    → status 504
+  - L4 L4-08: 空请求体
+    → status=504
+  - L4 L4-09: 缺少 messages
+    → status=504
+  - L4 L4-10: 无效 JSON
+    → status=504

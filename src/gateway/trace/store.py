@@ -7,7 +7,7 @@ Schema v2 — extended per TRACE_REFACTOR_PLAN.md with P0-P3 fields + span_conte
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import aiosqlite
@@ -192,7 +192,8 @@ class TraceStore:
             async with self._db.execute(
                 f"PRAGMA table_info({table_name})"
             ) as cursor:
-                existing_columns = {row[1] async for row in cursor}
+                rows = await cursor.fetchall()
+                existing_columns = {row[1] for row in rows}
 
             if column_name in existing_columns:
                 continue  # 列已存在，跳过
@@ -604,7 +605,7 @@ class TraceStore:
         Raises:
             aiosqlite.Error
         """
-        since = datetime.now(timezone.utc)
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
         since_iso = since.isoformat()
 
         async with self.db.execute(

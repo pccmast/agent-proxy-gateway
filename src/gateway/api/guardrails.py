@@ -24,7 +24,9 @@ def create_guardrails_router(
     async def get_stats():
         """Get per-rule hit statistics."""
         stats = guardrails_engine.get_stats()
-        return {"stats": stats, "total_hits": sum(stats.values())}
+        # v2: stats 结构为 {rule_id: {"total": N, "block": N, ...}}
+        total_hits = sum(v.get("total", 0) if isinstance(v, dict) else v for v in stats.values())
+        return {"stats": stats, "total_hits": total_hits}
 
     @router.get("/rules")
     async def list_rules():
