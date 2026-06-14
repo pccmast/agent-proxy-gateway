@@ -202,9 +202,16 @@ def create_app() -> FastAPI:
 
     @app.get("/metrics")
     async def metrics():
-        from gateway.metrics import metrics_response
         from fastapi.responses import Response
-        return Response(content=metrics_response(), media_type="text/plain")
+        try:
+            from gateway.metrics import metrics_response
+            return Response(content=metrics_response(), media_type="text/plain")
+        except ImportError:
+            return Response(
+                content="prometheus-client not installed\n",
+                status_code=503,
+                media_type="text/plain",
+            )
 
     # Traces
     @app.api_route("/api/traces/stats", methods=["GET"], tags=["traces"])

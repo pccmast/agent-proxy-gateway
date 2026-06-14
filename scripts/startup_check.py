@@ -59,6 +59,24 @@ CHECKS: list[dict[str, object]] = [
         "path": "/api/traces/stats",
         "expect_status": 200,
     },
+    {
+        "name": "guardrail stats",
+        "method": "GET",
+        "path": "/api/guardrails/stats",
+        "expect_status": 200,
+    },
+    {
+        "name": "budget status",
+        "method": "GET",
+        "path": "/api/budget/status",
+        "expect_status": 200,
+    },
+    {
+        "name": "eval metrics",
+        "method": "GET",
+        "path": "/api/eval/metrics",
+        "expect_status": 200,
+    },
 ]
 
 PROXY_CHECK: dict[str, object] = {
