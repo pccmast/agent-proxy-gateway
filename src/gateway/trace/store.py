@@ -7,8 +7,9 @@ Schema v2 — extended per TRACE_REFACTOR_PLAN.md with P0-P3 fields + span_conte
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import cast
 
 import aiosqlite
 
@@ -189,7 +190,7 @@ class TraceStore:
         对于每个目标列，先查询 PRAGMA table_info 确认列不存在再执行。
         """
         for table_name, column_name, type_suffix in MIGRATIONS_SQL:
-            async with self._db.execute(
+            async with self.db.execute(
                 f"PRAGMA table_info({table_name})"
             ) as cursor:
                 rows = await cursor.fetchall()
@@ -199,7 +200,7 @@ class TraceStore:
                 continue  # 列已存在，跳过
 
             try:
-                await self._db.execute(
+                await self.db.execute(
                     f"ALTER TABLE {table_name} ADD COLUMN {column_name} {type_suffix}"
                 )
                 logger.debug(
@@ -217,7 +218,7 @@ class TraceStore:
                     )
                 else:
                     raise
-        await self._db.commit()
+        await self.db.commit()
 
     async def close(self) -> None:
         """关闭数据库连接。幂等操作。"""
@@ -613,7 +614,10 @@ class TraceStore:
                 COUNT(*) as total_requests,
                 SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) as success_count,
                 SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) as blocked_count,
+                SUM(CASE WHEN status = 'rate_limited' THEN 1 ELSE 0 END) as rate_limited_count,
                 SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error_count,
+                SUM(CASE WHEN status = 'timeout' THEN 1 ELSE 0 END) as timeout_count,
+                SUM(CASE WHEN status = 'abandoned' THEN 1 ELSE 0 END) as abandoned_count,
                 SUM(prompt_tokens) as total_prompt_tokens,
                 SUM(completion_tokens) as total_completion_tokens,
                 AVG(latency_ms) as avg_latency_ms,
@@ -825,7 +829,7 @@ class TraceStore:
             if (cid := r.get("content_id")) and isinstance(cid, str) and cid
         ]
         if content_ids:
-            content_map: dict[str, str] = {}
+            content_map: dict[str, dict[str, object]] = {}
             for cid in content_ids:
                 content = await self.get_span_content(cid)
                 if content:
@@ -833,11 +837,36 @@ class TraceStore:
             for r in results:
                 cid = r.get("content_id")
                 if cid and cid in content_map:
-                    content = cast(dict[str, object], content_map[cid])
-                    r["request_body"] = content.get("request_body")
-                    r["response_body"] = content.get("response_body")
+                    mapped = content_map[cid]
+                    r["request_body"] = mapped.get("request_body")
+                    r["response_body"] = mapped.get("response_body")
 
         return results
+
+    # ------------------------------------------------------------------
+    # 僵尸 span 清理
+    # ------------------------------------------------------------------
+
+    async def mark_abandoned_spans(self, abandoned_minutes: int = 5) -> int:
+        """将所有超过 abandoned_minutes 仍未完成的 span 标记为 abandoned。
+
+        Detection heuristic: status='ok' AND latency_ms=0 且 created_at 早于
+        N 分钟前 → 几乎可以确定是被 start_trace 创建但从未 finish 的僵尸。
+
+        Returns:
+            被标记的 span 数量。
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=abandoned_minutes)
+        cutoff_iso = cutoff.isoformat()
+
+        cursor = await self.db.execute(
+            "UPDATE spans SET status = 'abandoned' "
+            "WHERE status = 'ok' AND latency_ms = 0 "
+            "AND created_at < ?",
+            (cutoff_iso,),
+        )
+        await self.db.commit()
+        return cursor.rowcount
 
     async def _query_latency_list(self, since_iso: str) -> list[float]:
         """查询时间窗口内所有 span 的延迟数据（用于百分位计算）。"""

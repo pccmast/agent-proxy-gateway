@@ -11,7 +11,7 @@ v2 — 四层 AI Safety Platform 引擎:
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from gateway.proxy.middleware import Middleware, BlockException
 from shared.models import (
@@ -28,6 +28,10 @@ from .rules.base import BaseGuardRule
 from .action import apply_redact_to_messages, format_block_reason
 from .scope import ScopeMatcher
 from .config import RuleScope, SessionState, AuditEvent
+
+if TYPE_CHECKING:
+    from .session import SessionStore
+    from .audit import AuditLogger
 
 logger = get_logger()
 
@@ -60,8 +64,8 @@ class GuardrailsEngine(Middleware):
     def __init__(
         self,
         rule_configs: list[dict[str, object]] | None = None,
-        session_store: "object | None" = None,  # SessionStore
-        audit_logger: "object | None" = None,   # AuditLogger
+        session_store: "SessionStore | None" = None,
+        audit_logger: "AuditLogger | None" = None,
     ) -> None:
         self._input_rules: list[BaseGuardRule] = []
         self._output_rules: list[BaseGuardRule] = []
@@ -131,7 +135,7 @@ class GuardrailsEngine(Middleware):
                 if not isinstance(rule_config, dict):
                     rule_config = {}
 
-                rule = cast(AnyType, rule_cls)(
+                rule = cast(AnyType, rule_cls)(  # pyright: ignore[reportArgumentType]
                     rule_id=cast(str, cfg.get("id", rule_type)),
                     action=cast(str, cfg.get("action", "log")),
                     severity=cast(str, cfg.get("severity", "medium")),
@@ -341,6 +345,8 @@ class GuardrailsEngine(Middleware):
     ) -> None:
         """记录审计事件."""
         import uuid
+        if self._audit_logger is None:
+            return
         event = AuditEvent(
             event_id=str(uuid.uuid4()),
             event_type=result.action.value if hasattr(result.action, "value") else str(result.action),

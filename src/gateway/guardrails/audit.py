@@ -89,12 +89,12 @@ class AuditLogger:
                     return [
                         AuditEvent(
                             event_id=str(row["event_id"]),
-                            event_type=str(row.get("event_type", "")),
-                            rule_id=str(row.get("rule_id", "")),
-                            session_id=row.get("session_id"),
-                            trace_id=row.get("trace_id"),
-                            severity=str(row.get("severity", "medium")),
-                            details=str(row.get("details", "")),
+                            event_type=str(row["event_type"]) if row["event_type"] else "",
+                            rule_id=str(row["rule_id"]) if row["rule_id"] else "",
+                            session_id=row["session_id"],
+                            trace_id=row["trace_id"],
+                            severity=str(row["severity"]) if row["severity"] else "medium",
+                            details=str(row["details"]) if row["details"] else "",
                         )
                         for row in rows
                     ]

@@ -19,6 +19,23 @@ class BlockException(Exception):
         super().__init__(f"Blocked by {rule_id}: {reason}")
 
 
+class RateLimitException(Exception):
+    """Raised when rate limiting is exceeded — semantically distinct from BlockException.
+
+    Uses a separate exception class so the proxy layer records
+    ``status=\"rate_limited\"`` instead of ``status=\"blocked\"``,
+    giving operations teams clear separation between safety incidents
+    (403) and quota exhaustion (429).
+    """
+
+    def __init__(self, rule_id: str, reason: str, retry_after: float = 1.0):
+        self.rule_id = rule_id
+        self.reason = reason
+        self.status_code = 429
+        self.retry_after = retry_after
+        super().__init__(f"Rate limited by {rule_id}: {reason}")
+
+
 class Middleware(ABC):
     """Base class for all gateway middleware.
 
@@ -91,7 +108,7 @@ class MiddlewareChain:
         for mw in self._middlewares:
             try:
                 ctx = await mw.on_request(ctx)
-            except BlockException:
+            except (BlockException, RateLimitException):
                 raise
             except Exception as e:
                 logger.warning(

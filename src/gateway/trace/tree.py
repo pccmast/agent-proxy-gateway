@@ -59,8 +59,8 @@ class _SpanRow(_SpanRowBase, total=False):
     gateway_version: str | None
     created_at: str
     # deprecated field — still may exist in rows from old schema
-    guard_hits: str
-    eval_scores: str
+    guard_hits: str | list[str]
+    eval_scores: str | dict[str, float]
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +191,7 @@ class SpanTree:
                 finish_reason=span.get("finish_reason"),
                 error_message=span.get("error_message"),
                 temperature=(
-                    float(span["temperature"]) if span.get("temperature") is not None
+                    float(t) if (t := span.get("temperature")) is not None
                     else None
                 ),
                 max_tokens=span.get("max_tokens"),
@@ -257,17 +257,15 @@ class SpanTree:
             results = await asyncio.gather(*tasks)
 
             for cid, result in zip(content_ids, results):
-                if result is None:
+                if result is None or not isinstance(result, dict):
                     continue
                 # Find the span node that owns this content_id
                 for node in nodes.values():
                     if node.content_id == cid:
-                        request_body = result.get("request_body")
-                        response_body = result.get("response_body")
-                        if isinstance(request_body, str):
-                            node.request_body = request_body
-                        if isinstance(response_body, str):
-                            node.response_body = response_body
+                        rb = result.get("request_body")
+                        resp_b = result.get("response_body")
+                        node.request_body = rb if isinstance(rb, str) else None
+                        node.response_body = resp_b if isinstance(resp_b, str) else None
                         break
 
         try:

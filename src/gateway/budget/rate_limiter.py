@@ -8,7 +8,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 
-from gateway.proxy.middleware import Middleware, BlockException
+from gateway.proxy.middleware import Middleware, RateLimitException
 from shared.models import RequestContext, ResponseContext
 from shared.logging import get_logger
 
@@ -71,12 +71,12 @@ class SlidingWindowRateLimiter(Middleware):
         # Check agent-level limits
         agent_cfg = self._default  # per-agent uses defaults
         agent_win = self._resolve_agent_window(agent_id)
-        agent_rpm_ok, _ = self._check_rpm(agent_win, agent_cfg, now)
+        agent_rpm_ok, retry_secs = self._check_rpm(agent_win, agent_cfg, now)
         if not agent_rpm_ok:
-            raise BlockException(
+            raise RateLimitException(
                 rule_id="rate-limiter",
                 reason=f"Agent '{agent_id}' RPM exceeded ({agent_cfg.rpm}/min)",
-                status_code=429,
+                retry_after=retry_secs,
             )
 
         # TPM check is done in on_response when we know token count

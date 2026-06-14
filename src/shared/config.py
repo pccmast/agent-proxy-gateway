@@ -51,21 +51,27 @@ class GatewaySettings(BaseSettings):
     def get_api_key(self, provider: str) -> str:
         """Get API key for a provider by name.
 
-        Reads from the corresponding field (e.g. openai_api_key).
-        Falls back to reading from the environment variable name
-        specified in YAML provider config's api_key_env.
+        Priority:
+        1. Environment variable specified in YAML provider config's api_key_env
+        2. Direct field lookup (e.g. openai_api_key from .env)
+        3. Default env var name
         """
-        # Direct field lookup
+        # Priority 1: read from env var specified in YAML config (allows per-provider override)
+        provider_cfg = self._provider_configs.get(provider, {})
+        env_name = provider_cfg.get("api_key_env", f"{provider.upper()}_API_KEY")
+        env_value = os.environ.get(env_name, "")
+        if env_value:
+            return env_value
+
+        # Priority 2: direct field lookup (e.g. openai_api_key from .env)
         field_name = f"{provider}_api_key"
         if hasattr(self, field_name):
             value = getattr(self, field_name)
             if value:
                 return value
 
-        # Fallback: read from env var specified in YAML config
-        provider_cfg = self._provider_configs.get(provider, {})
-        env_name = provider_cfg.get("api_key_env", f"{provider.upper()}_API_KEY")
-        return os.environ.get(env_name, "")
+        # Priority 3: default env var
+        return os.environ.get(f"{provider.upper()}_API_KEY", "")
 
     def get_base_url(self, provider: str) -> str:
         """Get base URL for a provider from YAML config."""

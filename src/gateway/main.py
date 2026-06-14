@@ -9,6 +9,7 @@
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+import asyncio
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -42,12 +43,33 @@ _rate_limiter: SlidingWindowRateLimiter | None = None
 _token_counter: TokenCounter | None = None
 _circuit_breaker: CircuitBreaker | None = None
 _eval_pipeline: EvalPipeline | None = None
+_cleanup_task: asyncio.Task[object] | None = None
+
+
+async def _cleanup_abandoned_spans_loop(
+    trace_engine: TraceEngine, interval_seconds: float = 300.0
+) -> None:
+    """Background task: periodically mark orphan spans as abandoned."""
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            marked = await trace_engine.cleanup_abandoned_spans(
+                abandoned_minutes=5,
+            )
+            if marked > 0:
+                logger.info("abandoned_spans_cleanup_completed", marked=marked)
+        except asyncio.CancelledError:
+            logger.info("cleanup_task_cancelled")
+            return
+        except Exception:
+            logger.warning("cleanup_task_error", exc_info=True)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global _proxy_engine, _trace_engine, _trace_store, _policy_store
     global _guardrails_engine, _rate_limiter, _token_counter, _circuit_breaker, _eval_pipeline
+    global _cleanup_task
 
     os.makedirs("data", exist_ok=True)
 
@@ -92,7 +114,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         half_open_max_calls=cb_cfg.half_open_max_calls,
     )
 
-    # Eval
+    # Eval — heuristic checks only by default.
+    # LLM-as-Judge is NOT recommended for production gateway deployments:
+    # it consumes real token costs and belongs in a separate offline
+    # evaluation system.  See eval/llm_judge.py for details.
     eval_cfg = _policy_store.eval_config()
     llm_judge = None
     if eval_cfg.llm_judge.enabled:
@@ -122,6 +147,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         adapter_registry=adapter_registry,
         middleware_chain=chain,
         trace_engine=_trace_engine,
+        circuit_breaker=_circuit_breaker,
     )
 
     # State
@@ -135,8 +161,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     logger.info("gateway_initialized", providers=adapter_registry.list_providers())
 
+    # Start background abandoned-span cleanup task
+    _cleanup_task = asyncio.create_task(
+        _cleanup_abandoned_spans_loop(_trace_engine, interval_seconds=300.0)
+    )
+
     yield
 
+    if _cleanup_task:
+        _cleanup_task.cancel()
+        try:
+            await _cleanup_task
+        except asyncio.CancelledError:
+            pass
+        _cleanup_task = None
     if _proxy_engine:
         await _proxy_engine.close()
     if _trace_store:

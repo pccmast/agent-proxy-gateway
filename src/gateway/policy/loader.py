@@ -93,7 +93,12 @@ class HeuristicEvalConfig(BaseModel):
 
 
 class LLMJudgeConfig(BaseModel):
-    """LLM-as-Judge configuration."""
+    """LLM-as-Judge configuration — experimental, NOT recommended for production.
+
+    Full-quality evaluation should run in a separate offline batch system.
+    Enabling this inside the gateway consumes real token costs and competes
+    for connection-pool resources — see eval/llm_judge.py for details.
+    """
     enabled: bool = False
     model: str = "gpt-4o-mini"
     api_key_env: str = "EVAL_LLM_API_KEY"

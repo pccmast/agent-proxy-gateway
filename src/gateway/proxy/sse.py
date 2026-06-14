@@ -31,11 +31,13 @@ class SSEInterceptor:
         middleware_chain: Any,
         stream_context: Any,  # RequestContext-like (has trace_id, span_id, request)
         trace_engine: Any = None,
+        circuit_breaker: Any = None,
     ):
         self.adapter = adapter
         self.middleware_chain = middleware_chain
         self.trace_context = stream_context
         self.trace_engine = trace_engine
+        self.circuit_breaker = circuit_breaker
 
         # Accumulation state
         self.accumulated_content = ""
@@ -129,17 +131,40 @@ class SSEInterceptor:
         self.guard_results = stream_ctx.guard_results
 
         if result is None:
-            # Chunk was dropped by middleware
+            # Replace blocked content with a placeholder instead of
+            # silently dropping the chunk. Dropping causes client-side
+            # garbled text (e.g. "北京是" + [drop] + "的首都" = "北京是的首都").
+            # Replacing preserves stream structure while filtering harm.
+            if chunk.delta_content:
+                placeholder = "[已过滤]"
+                replacement = (
+                    'data: {"choices":[{"delta":{"content":"'
+                    + placeholder
+                    + '"}}]}\n\n'
+                )
+                return replacement.encode("utf-8")
+            # Tool-call / usage-only chunks: drop silently.
+            # These carry structural metadata, not user-visible text.
             return None
 
         # Re-emit the chunk (pass original bytes through for minimal latency)
         return line_bytes
 
     async def finalize(self) -> list[bytes]:
-        """Called after stream ends. Finalize the trace span.
+        """Called after stream ends — normal or abnormal.
 
         Yields any final bytes needed (e.g., trailing newline).
+        On abnormal completion (stream_done=False, e.g. client disconnect),
+        records the trace with status=\"abandoned\".
         """
+        # Determine completion mode
+        completed_normally = self.stream_done
+        status = "ok" if completed_normally else "abandoned"
+
+        # Circuit breaker: stream completed normally — upstream is healthy
+        if completed_normally and self.circuit_breaker:
+            self.circuit_breaker.record_success()
+
         # Build accumulated response for trace recording
         accumulated_content = self.accumulated_content
         if self.trace_engine and self.trace_context.trace_id:
@@ -178,7 +203,7 @@ class SSEInterceptor:
                 SpanFinishParams(
                     trace_id=self.trace_context.trace_id,
                     span_id=self.trace_context.span_id,
-                    status="ok",
+                    status=status,
                     token_usage=self.total_usage,
                     ttft_ms=self._ttft_ms,
                     finish_reason=self.finish_reason,

@@ -7,6 +7,21 @@ Evaluates response quality along three dimensions:
 
 Runs asynchronously — never blocks the response path.
 Results are logged and can be written back to the trace span.
+
+.. warning::
+
+   **Scope boundary**: This module is kept for experimental / offline use only.
+   Running an LLM-as-Judge inside the gateway process is NOT recommended for
+   production — it consumes real token costs, competes for connection-pool
+   resources, and conflates the gateway's thin-proxy responsibility with
+   content-quality assessment.
+
+   Production deployments should perform quality evaluation in a separate
+   offline / batch evaluation system with its own resource budget,
+   evaluation datasets, and reporting pipeline.
+
+   To enable this module for experimentation, you must explicitly configure
+   ``eval.llm_judge.enabled: true`` and provide ``EVAL_LLM_API_KEY``.
 """
 
 import asyncio

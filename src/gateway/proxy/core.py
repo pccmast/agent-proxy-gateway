@@ -14,13 +14,14 @@ Supports both non-streaming (JSON) and streaming (SSE) response forwarding.
 from typing import Any
 
 import httpx
+import os
 from fastapi import Request, Response
 from fastapi.responses import StreamingResponse, JSONResponse
 
 from shared.config import GatewaySettings
 from shared.logging import get_logger
 from .sse import SSEInterceptor
-from .middleware import MiddlewareChain, BlockException
+from .middleware import MiddlewareChain, BlockException, RateLimitException
 
 logger = get_logger()
 
@@ -34,11 +35,13 @@ class ProxyEngine:
         adapter_registry: Any,  # AdapterRegistry
         middleware_chain: MiddlewareChain | None = None,
         trace_engine: Any = None,  # TraceEngine
+        circuit_breaker: Any = None,  # CircuitBreaker
     ):
         self.settings = settings
         self.adapter_registry = adapter_registry
         self.middleware_chain = middleware_chain or MiddlewareChain()
         self.trace_engine = trace_engine
+        self.circuit_breaker = circuit_breaker
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -102,91 +105,179 @@ class ProxyEngine:
         )
 
         # --- Phase 2: Middleware chain (request) ---
-        try:
-            ctx = await self.middleware_chain.run_request(ctx)
-        except BlockException as exc:
-            if self.trace_engine and trace_id:
-                from shared.models import GuardHitRecord, SpanFinishParams
-
-                await self.trace_engine.finish_span(
-                    SpanFinishParams(
-                        trace_id=trace_id,
-                        span_id=span_id,
-                        status="blocked",
-                        guard_hits=[
-                            GuardHitRecord(rule_id=exc.rule_id, action="block")
-                        ],
-                        request_body=raw_body,
-                    )
-                )
-            return JSONResponse(
-                status_code=exc.status_code,
-                content={"error": exc.reason, "blocked_by": exc.rule_id},
-            )
-
         # --- Phase 3: Forward to upstream ---
-        api_key = self._get_api_key(adapter.provider)
-        upstream_url = adapter.get_upstream_url(
-            path, self._get_base_url(adapter.provider)
-        )
-        upstream_headers = adapter.get_upstream_headers(headers, api_key, self._get_base_url(adapter.provider))
-
-        logger.info(
-            "forwarding_request",
-            provider=adapter.provider,
-            model=normalized_req.model,
-            upstream_url=upstream_url,
-            stream=normalized_req.stream,
-            trace_id=trace_id,
-        )
-
+        # Wrapped in outer try to guarantee finish_span on any unhandled exception
         try:
-            client = await self._get_client()
-            if normalized_req.stream:
-                return await self._forward_stream(
-                    client, upstream_url, upstream_headers, raw_body, adapter, ctx
-                )
-            else:
-                return await self._forward_non_stream(
-                    client, upstream_url, upstream_headers, raw_body, adapter, ctx
-                )
-        except httpx.TimeoutException:
-            logger.error("upstream_timeout", upstream_url=upstream_url, trace_id=trace_id)
-            if self.trace_engine and trace_id:
-                from shared.models import SpanFinishParams
+            try:
+                ctx = await self.middleware_chain.run_request(ctx)
+            except BlockException as exc:
+                if self.trace_engine and trace_id:
+                    from shared.models import GuardHitRecord, SpanFinishParams
 
-                await self.trace_engine.finish_span(
-                    SpanFinishParams(
-                        trace_id=trace_id,
-                        span_id=span_id,
-                        status="timeout",
-                        error_message=f"Upstream request timed out after {self.settings.upstream_timeout}s",
-                        request_body=raw_body,
-                        upstream_url=upstream_url,
+                    await self.trace_engine.finish_span(
+                        SpanFinishParams(
+                            trace_id=trace_id,
+                            span_id=span_id,
+                            status="blocked",
+                            guard_hits=[
+                                GuardHitRecord(rule_id=exc.rule_id, action="block")
+                            ],
+                            request_body=raw_body,
+                        )
                     )
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={"error": exc.reason, "blocked_by": exc.rule_id},
                 )
-            return JSONResponse(
-                status_code=504,
-                content={"error": "Upstream request timed out"},
+            except RateLimitException as exc:
+                if self.trace_engine and trace_id:
+                    from shared.models import SpanFinishParams
+
+                    await self.trace_engine.finish_span(
+                        SpanFinishParams(
+                            trace_id=trace_id,
+                            span_id=span_id,
+                            status="rate_limited",
+                            error_message=exc.reason,
+                            request_body=raw_body,
+                        )
+                    )
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": exc.reason,
+                        "retry_after_seconds": exc.retry_after,
+                    },
+                )
+
+            # --- Circuit breaker check ---
+            if self.circuit_breaker and not self.circuit_breaker.allow_request():
+                logger.warning(
+                    "circuit_breaker_open",
+                    provider=adapter.provider,
+                    trace_id=trace_id,
+                )
+                if self.trace_engine and trace_id:
+                    from shared.models import SpanFinishParams
+
+                    await self.trace_engine.finish_span(
+                        SpanFinishParams(
+                            trace_id=trace_id,
+                            span_id=span_id,
+                            status="error",
+                            error_message="Circuit breaker is OPEN — upstream unreachable",
+                            request_body=raw_body,
+                        )
+                    )
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "error": "Service temporarily unavailable",
+                        "detail": "Circuit breaker is open — upstream is unreachable",
+                    },
+                )
+
+            api_key = self._get_api_key(adapter.provider)
+            upstream_url = adapter.get_upstream_url(
+                path, self._get_base_url(adapter.provider)
             )
-        except httpx.ConnectError as e:
-            logger.error("upstream_connect_error", upstream_url=upstream_url, error=str(e))
+            upstream_headers = adapter.get_upstream_headers(headers, api_key, self._get_base_url(adapter.provider))
+
+            logger.info(
+                "forwarding_request",
+                provider=adapter.provider,
+                model=normalized_req.model,
+                upstream_url=upstream_url,
+                stream=normalized_req.stream,
+                trace_id=trace_id,
+                api_key_prefix=api_key[:10] if api_key else "empty",
+            )
+
+            try:
+                client = await self._get_client()
+                if normalized_req.stream:
+                    return await self._forward_stream(
+                        client, upstream_url, upstream_headers, raw_body, adapter, ctx
+                    )
+                else:
+                    return await self._forward_non_stream(
+                        client, upstream_url, upstream_headers, raw_body, adapter, ctx
+                    )
+            except httpx.TimeoutException:
+                if self.circuit_breaker:
+                    self.circuit_breaker.record_failure()
+                logger.error("upstream_timeout", upstream_url=upstream_url, trace_id=trace_id)
+                if self.trace_engine and trace_id:
+                    from shared.models import SpanFinishParams
+
+                    await self.trace_engine.finish_span(
+                        SpanFinishParams(
+                            trace_id=trace_id,
+                            span_id=span_id,
+                            status="timeout",
+                            error_message=f"Upstream request timed out after {self.settings.upstream_timeout}s",
+                            request_body=raw_body,
+                            upstream_url=upstream_url,
+                        )
+                    )
+                return JSONResponse(
+                    status_code=504,
+                    content={"error": "Upstream request timed out"},
+                )
+            except httpx.ConnectError as e:
+                if self.circuit_breaker:
+                    self.circuit_breaker.record_failure()
+                logger.error("upstream_connect_error", upstream_url=upstream_url, error=str(e))
+                if self.trace_engine and trace_id:
+                    from shared.models import SpanFinishParams
+
+                    await self.trace_engine.finish_span(
+                        SpanFinishParams(
+                            trace_id=trace_id,
+                            span_id=span_id,
+                            status="error",
+                            error_message=f"Cannot connect to upstream: {str(e)}",
+                            request_body=raw_body,
+                            upstream_url=upstream_url,
+                        )
+                    )
+                return JSONResponse(
+                    status_code=502,
+                    content={"error": f"Cannot connect to upstream: {str(e)}"},
+                )
+
+        except Exception as exc:
+            # Catch-all: prevent orphan traces from unhandled exceptions
+            import traceback as tb
+            logger.error(
+                "unhandled_exception",
+                trace_id=trace_id,
+                span_id=span_id,
+                error=str(exc),
+                traceback=tb.format_exc(),
+            )
             if self.trace_engine and trace_id:
                 from shared.models import SpanFinishParams
 
-                await self.trace_engine.finish_span(
-                    SpanFinishParams(
-                        trace_id=trace_id,
-                        span_id=span_id,
-                        status="error",
-                        error_message=f"Cannot connect to upstream: {str(e)}",
-                        request_body=raw_body,
-                        upstream_url=upstream_url,
+                try:
+                    await self.trace_engine.finish_span(
+                        SpanFinishParams(
+                            trace_id=trace_id,
+                            span_id=span_id,
+                            status="error",
+                            error_message=f"Unhandled exception: {str(exc)}",
+                            request_body=raw_body,
+                        )
                     )
-                )
+                except Exception as finish_err:
+                    logger.error(
+                        "finish_span_failed_in_exception_handler",
+                        trace_id=trace_id,
+                        error=str(finish_err),
+                    )
             return JSONResponse(
-                status_code=502,
-                content={"error": f"Cannot connect to upstream: {str(e)}"},
+                status_code=500,
+                content={"error": "Internal gateway error"},
             )
 
     async def _forward_non_stream(
@@ -262,6 +353,10 @@ class ProxyEngine:
                 )
             )
 
+        # Circuit breaker: non-stream response received successfully
+        if self.circuit_breaker:
+            self.circuit_breaker.record_success()
+
         return JSONResponse(
             content=raw_resp,
             status_code=response.status_code,
@@ -282,18 +377,20 @@ class ProxyEngine:
             middleware_chain=self.middleware_chain,
             stream_context=ctx,
             trace_engine=self.trace_engine,
+            circuit_breaker=self.circuit_breaker,
         )
 
         async def generate():
-            async with client.stream("POST", url, json=body, headers=headers) as response:
-                async for line_bytes, line_str in sse_interceptor.aiter_lines(response):
-                    result_bytes = await sse_interceptor.process_line(line_bytes, line_str)
-                    if result_bytes is not None:
-                        yield result_bytes
-
-            final_bytes = await sse_interceptor.finalize()
-            for fb in final_bytes:
-                yield fb
+            try:
+                async with client.stream("POST", url, json=body, headers=headers) as response:
+                    async for line_bytes, line_str in sse_interceptor.aiter_lines(response):
+                        result_bytes = await sse_interceptor.process_line(line_bytes, line_str)
+                        if result_bytes is not None:
+                            yield result_bytes
+            finally:
+                # Guarantee finalize() runs even on client disconnect or
+                # upstream stream error — prevents orphan traces in SSE mode.
+                await sse_interceptor.finalize()
 
         return StreamingResponse(
             generate(),
@@ -306,13 +403,11 @@ class ProxyEngine:
         )
 
     def _get_api_key(self, provider: str) -> str:
-        """Get API key for a provider from settings (dynamic lookup).
-
-        Uses GatewaySettings.get_api_key() which reads from:
-        1. Direct field (e.g. settings.openai_api_key)
-        2. Fallback to env var specified in YAML config's api_key_env
-        """
-        return self.settings.get_api_key(provider)
+        """Get API key for a provider from settings (dynamic lookup)."""
+        key = self.settings.get_api_key(provider)
+        env_val = os.environ.get("LM_STUDIO_API_KEY", "NOT_SET")
+        logger.info("api_key_lookup", provider=provider, key_prefix=(key[:15] if key else "EMPTY"), env_lm=env_val[:15])
+        return key
 
     def _get_base_url(self, provider: str) -> str:
         """Get base URL for a provider from YAML config via settings."""

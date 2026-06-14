@@ -185,13 +185,20 @@ class OpenAIAdapter(ProtocolAdapter):
         """Preserve headers but replace Authorization with real API key.
 
         Host header is derived from base_url to support multiple upstream providers.
+        If no gateway-level API key is configured, preserve the client's Authorization header.
         """
         headers = {
             k: v
             for k, v in original_headers.items()
             if k.lower() not in ("host", "authorization", "transfer-encoding")
         }
-        headers["Authorization"] = f"Bearer {api_key}"
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        else:
+            # Preserve client's Authorization when no gateway-level key is configured
+            auth = original_headers.get("Authorization") or original_headers.get("authorization")
+            if auth:
+                headers["Authorization"] = auth
         # Derive Host from base_url (e.g. "https://api.deepseek.com" -> "api.deepseek.com")
         if base_url:
             from urllib.parse import urlparse

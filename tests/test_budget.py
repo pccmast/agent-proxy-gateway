@@ -6,7 +6,7 @@ import pytest
 from gateway.budget.rate_limiter import SlidingWindowRateLimiter, RateLimitConfig
 from gateway.budget.token_counter import TokenCounter
 from gateway.budget.circuit_breaker import CircuitBreaker, CircuitState
-from gateway.proxy.middleware import BlockException
+from gateway.proxy.middleware import BlockException, RateLimitException
 from shared.models import (
     RequestContext, ResponseContext, NormalizedRequest, NormalizedResponse, Message, TokenUsage,
 )
@@ -40,7 +40,7 @@ class TestSlidingWindowRateLimiter:
         )
         for _ in range(5):
             await limiter.on_request(ctx)
-        with pytest.raises(BlockException) as exc:
+        with pytest.raises(RateLimitException) as exc:
             await limiter.on_request(ctx)
         assert exc.value.rule_id == "rate-limiter"
         assert exc.value.status_code == 429

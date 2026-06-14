@@ -1,0 +1,67 @@
+# benchmark_v2 configuration — real GPU backend via lm studio
+backend:
+  type: "lm_studio"           # or "mock" for fallback
+  base_url: "http://127.0.0.1:12345/v1"
+  api_key: "sk-lm-cR1GVaJg:W0pVeY0MwNSkiaJY3llG"
+  model: "minicpm-v-4.6"      # exact model name expected by lm studio
+  max_tokens: 128             # keep responses short for benchmark speed
+  temperature: 0.1
+
+gateway:
+  base_url: "http://localhost:18080"
+  # If gateway points to lm studio, we can test directly or via gateway
+  # Set test_mode: "direct" to test lm studio directly
+  # Set test_mode: "gateway" to test via gateway proxy
+  test_mode: "gateway"
+
+experiments:
+  e1_baseline:
+    concurrency: 1
+    requests: 5
+    streaming: false
+    prompt: "Explain quantum computing in one sentence."
+
+  e2_light_concurrency:
+    concurrency: 3
+    requests: 10
+    streaming: false
+    prompt: "What is the capital of France?"
+
+  e3_stair_step:
+    steps:
+      - { concurrency: 5,  requests: 10, duration: 60 }
+      - { concurrency: 10, requests: 10, duration: 60 }
+      - { concurrency: 20, requests: 10, duration: 60 }
+    step_interval: 30         # seconds between steps
+    streaming: false
+    prompt: "List three benefits of exercise."
+
+  e4_streaming_baseline:
+    concurrency: 1
+    requests: 5
+    streaming: true
+    prompt: "Write a haiku about spring."
+
+  e5_streaming_concurrency:
+    concurrency: 3
+    requests: 6
+    streaming: true
+    prompt: "Describe a sunset in 20 words."
+
+observability:
+  # Client-side metrics (no gateway modification)
+  record_headers:
+    - "X-Request-Start"
+    - "X-First-Byte"
+    - "X-Total-Duration"
+  
+  # Connection-level timing
+  record_connection_timing: true
+  
+  # Streaming metrics
+  record_chunk_intervals: true
+  max_chunk_intervals: 20   # record first N intervals
+
+output:
+  results_dir: "benchmark_v2/results"
+  log_level: "INFO"

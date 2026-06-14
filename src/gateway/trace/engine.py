@@ -344,6 +344,35 @@ class TraceEngine:
         )
 
     # ------------------------------------------------------------------
+    # 僵尸 span 清理
+    # ------------------------------------------------------------------
+
+    async def cleanup_abandoned_spans(self, abandoned_minutes: int = 5) -> int:
+        """Mark spans as abandoned that were started but never finished.
+
+        Detection heuristic: spans where ``latency_ms = 0`` and
+        ``status = \"ok\"`` and ``created_at`` is older than *abandoned_minutes*
+        ago are virtually certain to be abandoned — they were INSERTed by
+        ``start_trace`` but never reached ``finish_span``.
+
+        Args:
+            abandoned_minutes: 超出多长时间未完成则视为废弃。
+
+        Returns:
+            被标记为 abandoned 的 span 数量。
+        """
+        marked = await self._store.mark_abandoned_spans(
+            abandoned_minutes=abandoned_minutes,
+        )
+        if marked > 0:
+            logger.warning(
+                "abandoned_spans_cleaned",
+                count=marked,
+                threshold_minutes=abandoned_minutes,
+            )
+        return marked
+
+    # ------------------------------------------------------------------
     # 查询方法
     # ------------------------------------------------------------------
 
@@ -415,7 +444,14 @@ class TraceEngine:
         total_latency = 0.0
         total_cost = 0.0
         final_status = "ok"
-        status_priority = {"error": 0, "timeout": 1, "blocked": 2, "ok": 3}
+        status_priority = {
+            "error": 0,
+            "timeout": 1,
+            "abandoned": 2,
+            "blocked": 3,
+            "rate_limited": 4,
+            "ok": 5,
+        }
 
         for s in spans:
             total_tokens += int(cast(int, s.get("prompt_tokens", 0))) + int(
@@ -425,7 +461,7 @@ class TraceEngine:
             total_cost += float(cast(float, s.get("estimated_cost_usd", 0)))
 
             s_status = cast(str, s.get("status", "ok"))
-            if status_priority.get(s_status, 3) < status_priority.get(final_status, 3):
+            if status_priority.get(s_status, 5) < status_priority.get(final_status, 5):
                 final_status = s_status
 
         await self._store.update_trace(

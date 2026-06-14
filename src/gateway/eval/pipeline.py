@@ -97,7 +97,8 @@ class EvalPipeline(Middleware):
             names = ", ".join(f"{r.name}={r.score:.2f}" for r in low_scores)
             logger.info("low_eval_scores", trace_id=ctx.trace_id, scores=names)
 
-        # Queue async LLM judge if configured
+        # Queue async LLM judge if configured.
+        # NOT recommended for production — see eval/llm_judge.py docstring.
         if self._llm_judge:
             try:
                 import asyncio
