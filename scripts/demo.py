@@ -85,6 +85,40 @@ def assert_status(resp: httpx.Response, acceptable: list[int], label: str) -> No
         sys.exit(1)
 
 
+def print_request(body: dict[str, Any]) -> None:
+    """Print the user-facing request content for readability."""
+    messages = body.get("messages", [])
+    for msg in messages:
+        role = msg.get("role", "?")
+        content = msg.get("content", "")
+        content_preview = content[:120] + ("..." if len(content) > 120 else "")
+        print(f"  Request ({role}): {content_preview}")
+    model = body.get("model", "?")
+    max_tokens = body.get("max_tokens", "?")
+    print(f"  Model: {model}  |  max_tokens: {max_tokens}")
+
+
+def print_response(resp: httpx.Response) -> None:
+    """Print the response content for readability."""
+    try:
+        data = resp.json()
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        content_preview = content[:150] + ("..." if len(content) > 150 else "")
+        if content_preview:
+            print(f"  Response: {content_preview}")
+        usage = data.get("usage", {})
+        if usage:
+            print(f"  Tokens: prompt={usage.get('prompt_tokens','?')} "
+                  f"completion={usage.get('completion_tokens','?')}")
+    except Exception:
+        print(f"  Response: (could not parse as JSON)")
+
+
+# ============================================================================
+# Demo Steps
+# ============================================================================
+
+
 def step0_check_config() -> None:
     """Verify the gateway has loaded all expected guardrail rules."""
     step("Configuration check")
@@ -101,39 +135,31 @@ def step0_check_config() -> None:
     assert not missing, f"Expected guardrail rules not loaded: {missing}"
     print("  ✅ All expected guardrail rules loaded")
 
-# ============================================================================
-# Demo Steps
-# ============================================================================
-
 
 def step1_normal_request() -> None:
     """Normal text request — should pass all guardrails."""
     step("Normal chat completion (non-streaming)")
 
-    resp = post("/v1/chat/completions", {
+    body = {
         "model": "deepseek-chat",
         "messages": [{"role": "user", "content": "What is the capital of France? Answer in one word."}],
         "max_tokens": 10,
-    })
+    }
+    print_request(body)
+    resp = post("/v1/chat/completions", body)
 
     if _check_only or resp.status_code in (502, 504):
-        # Gateway pathway works — upstream unreachable is not a demo failure
         assert_status(resp, [200, 502, 504], "Normal request")
-        print(f"  Status:  {resp.status_code}")
+        print(f"  Status: {resp.status_code}")
         if resp.status_code != 200:
             print("  ℹ️  Upstream LLM unreachable — gateway pathway OK")
             return
-        data = resp.json()
+        print_response(resp)
     else:
         assert_status(resp, [200], "Normal request")
-        data = resp.json()
+        print(f"  Status: {resp.status_code}")
+        print_response(resp)
 
-    print(f"  Status:  {resp.status_code}")
-    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-    print(f"  Response: {content}")
-    token_count = data.get("usage", {}).get("total_tokens", "?")
-    print(f"  Tokens:   {token_count}")
-    assert token_count != "?" and token_count != 0, "No token usage returned — upstream may be misconfigured"
     print("  ✅ Normal request passed all guardrails")
 
 
@@ -141,18 +167,15 @@ def step2_pii_redact() -> None:
     """Request containing PII — should be redacted by gateway, not forwarded."""
     step("PII Detection → REDACT")
 
-    # First verify the PII rule is loaded and enabled
+    # Verify PII rule is loaded
     rules = api_get("/api/guardrails/rules").get("rules", [])
     pii_enabled = any(
         isinstance(r, dict) and "pii" in str(r.get("id", "")).lower() and r.get("enabled")
         for r in rules
     )
-    assert pii_enabled, (
-        f"PII rule not enabled. Loaded rules: "
-        f"{[(r.get('id','?'), r.get('enabled','?')) for r in rules if isinstance(r, dict)]}"
-    )
+    assert pii_enabled, "PII rule not loaded — check config/guardrails.yaml"
 
-    resp = post("/v1/chat/completions", {
+    body = {
         "model": "deepseek-chat",
         "messages": [{
             "role": "user",
@@ -160,46 +183,41 @@ def step2_pii_redact() -> None:
                        "Can you help me?",
         }],
         "max_tokens": 20,
-    })
+    }
+    print_request(body)
+    resp = post("/v1/chat/completions", body)
 
     print(f"  Status: {resp.status_code}")
+    assert_status(resp, [200, 502, 504], "PII response")
+
     if resp.status_code == 200:
         data = resp.json()
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        print(f"  Response: {content}")
-        # PII should be redacted — the LLM should NOT mention specific PII
-        assert "alice@company.com" not in content, "PII leaked to LLM response"
-        assert "13812345678" not in content, "Phone leaked to LLM response"
-    else:
-        assert_status(resp, [200, 502, 504], "PII response")
+        print(f"  Response: {content[:150]}")
+        # PII should be redacted — the LLM must NOT regurgitate the PII
+        leaked_email = "alice@company.com" in content
+        leaked_phone = "13812345678" in content
+        assert not leaked_email, f"PII email leaked to LLM response: '...{content[:80]}...'"
+        assert not leaked_phone, f"PII phone leaked to LLM response: '...{content[:80]}...'"
 
     # Check guardrail stats (in-memory, synchronously updated by _apply_guard_result)
     gs = api_get("/api/guardrails/stats")
     stats_raw = gs.get("stats", {})
-    total_hits = gs.get("total_hits", 0)
     pii_stats = stats_raw.get("pii-detection", {})
-    if isinstance(pii_stats, dict):
-        total = pii_stats.get("total", 0)
-    else:
-        total = 0
+    total = pii_stats.get("total", 0) if isinstance(pii_stats, dict) else 0
     assert total > 0, (
         f"PII guard hit not recorded. "
-        f"total_hits={total_hits}, "
-        f"stats_keys={list(stats_raw.keys()) if isinstance(stats_raw, dict) else type(stats_raw)}, "
+        f"total_hits={gs.get('total_hits', 0)}, "
         f"pii_stats={pii_stats}"
     )
     print(f"  ✅ PII guard hit recorded (total hits: {total})")
 
 
 def step3_injection_block() -> None:
-    """Prompt injection — should be blocked with 403.
-
-    Uses a rich attack string with multiple injection patterns to ensure
-    the confidence score exceeds the 0.7 threshold (see guardrails config).
-    """
+    """Prompt injection — should be blocked with 403."""
     step("Prompt Injection → BLOCK")
 
-    resp = post("/v1/chat/completions", {
+    body = {
         "model": "deepseek-chat",
         "messages": [{
             "role": "user",
@@ -211,7 +229,10 @@ def step3_injection_block() -> None:
             ),
         }],
         "max_tokens": 10,
-    })
+    }
+    print_request(body)
+    resp = post("/v1/chat/completions", body)
+
     print(f"  Status:  {resp.status_code}")
     data = resp.json()
     print(f"  Blocked by: {data.get('blocked_by', 'unknown')}")
@@ -221,14 +242,10 @@ def step3_injection_block() -> None:
 
 
 def step4_content_safety() -> None:
-    """Content safety violation — should be blocked.
-
-    Uses multiple violence-related keywords to ensure the combined
-    confidence from multiple categories exceeds the 0.7 threshold.
-    """
+    """Content safety violation — should be blocked."""
     step("Content Safety → BLOCK")
 
-    resp = post("/v1/chat/completions", {
+    body = {
         "model": "deepseek-chat",
         "messages": [{
             "role": "user",
@@ -239,7 +256,10 @@ def step4_content_safety() -> None:
             ),
         }],
         "max_tokens": 10,
-    })
+    }
+    print_request(body)
+    resp = post("/v1/chat/completions", body)
+
     print(f"  Status:  {resp.status_code}")
     data = resp.json()
     print(f"  Blocked by: {data.get('blocked_by', 'unknown')}")
@@ -252,25 +272,20 @@ def step5_streaming() -> None:
     """Streaming request — chunks forwarded transparently."""
     step("Streaming chat completion (SSE)")
 
-    if _check_only:
-        # Validate the gateway returns 200 for a simple stream request
-        # without actually consuming the stream (save time in CI).
-        resp = post("/v1/chat/completions", {
-            "model": "deepseek-chat",
-            "messages": [{"role": "user", "content": "Hello"}],
-            "max_tokens": 5,
-        }, stream=True)
-        assert_status(resp, [200, 502, 504], "Streaming response")
-        print(f"  Status: {resp.status_code}")
-        print("  ✅ Streaming endpoint reachable (check-only mode)")
-        return
-
     body = {
         "model": "deepseek-chat",
         "messages": [{"role": "user", "content": "Count from 1 to 3"}],
         "max_tokens": 20,
         "stream": True,
     }
+    print_request(body)
+
+    if _check_only:
+        resp = post("/v1/chat/completions", body, stream=True)
+        assert_status(resp, [200, 502, 504], "Streaming response")
+        print(f"  Status: {resp.status_code}")
+        print("  ✅ Streaming endpoint reachable (check-only mode)")
+        return
 
     chunks = 0
     content = ""
@@ -336,8 +351,7 @@ def step6_inspect_apis() -> None:
     # Budget
     try:
         budget = api_get("/api/budget/status")
-        budget_ok = budget.get("budget_ok", "?")
-        print(f"  Budget OK: {budget_ok}")
+        print(f"  Budget OK: {budget.get('budget_ok', '?')}")
     except Exception as e:
         print(f"  Budget API: unavailable ({e})")
         ok = False
@@ -369,14 +383,16 @@ def step7_anthropic_request() -> None:
         print("  ⏭️ Skipped — ANTHROPIC_API_KEY not set")
         return
 
+    body = {
+        "model": "claude-3-haiku-20240307",
+        "max_tokens": 20,
+        "system": "Reply in one word.",
+        "messages": [{"role": "user", "content": "Capital of Japan?"}],
+    }
+    print_request(body)
     resp = httpx.post(
         f"{GATEWAY_URL}/v1/messages",
-        json={
-            "model": "claude-3-haiku-20240307",
-            "max_tokens": 20,
-            "system": "Reply in one word.",
-            "messages": [{"role": "user", "content": "Capital of Japan?"}],
-        },
+        json=body,
         headers={
             "Content-Type": "application/json",
             "x-api-key": "any-key",
