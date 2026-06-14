@@ -53,6 +53,7 @@ RUN uv pip install --system \
     "pydantic-settings>=2.3" \
     "aiosqlite>=0.20" \
     "presidio-analyzer>=2.2" \
+    "prometheus-client>=0.20" \
     "pyyaml>=6.0" \
     "tiktoken>=0.7" \
     "structlog>=24.0"
