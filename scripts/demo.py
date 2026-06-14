@@ -85,6 +85,22 @@ def assert_status(resp: httpx.Response, acceptable: list[int], label: str) -> No
         sys.exit(1)
 
 
+def step0_check_config() -> None:
+    """Verify the gateway has loaded all expected guardrail rules."""
+    step("Configuration check")
+
+    rules = api_get("/api/guardrails/rules").get("rules", [])
+    enabled_ids = [r["id"] for r in rules if isinstance(r, dict) and r.get("enabled")]
+    print(f"  Loaded rules: {len(rules)} total, {len(enabled_ids)} enabled")
+    for r in rules:
+        if isinstance(r, dict):
+            print(f"    {r.get('id'):30s}  action={r.get('action','?'):6s}  enabled={r.get('enabled','?')}")
+
+    expected = ["pii-detection", "injection-detection", "content-safety"]
+    missing = [e for e in expected if e not in enabled_ids]
+    assert not missing, f"Expected guardrail rules not loaded: {missing}"
+    print("  ✅ All expected guardrail rules loaded")
+
 # ============================================================================
 # Demo Steps
 # ============================================================================
@@ -125,6 +141,17 @@ def step2_pii_redact() -> None:
     """Request containing PII — should be redacted by gateway, not forwarded."""
     step("PII Detection → REDACT")
 
+    # First verify the PII rule is loaded and enabled
+    rules = api_get("/api/guardrails/rules").get("rules", [])
+    pii_enabled = any(
+        isinstance(r, dict) and "pii" in str(r.get("id", "")).lower() and r.get("enabled")
+        for r in rules
+    )
+    assert pii_enabled, (
+        f"PII rule not enabled. Loaded rules: "
+        f"{[(r.get('id','?'), r.get('enabled','?')) for r in rules if isinstance(r, dict)]}"
+    )
+
     resp = post("/v1/chat/completions", {
         "model": "deepseek-chat",
         "messages": [{
@@ -148,12 +175,19 @@ def step2_pii_redact() -> None:
 
     # Check guardrail stats (in-memory, synchronously updated by _apply_guard_result)
     gs = api_get("/api/guardrails/stats")
-    pii_stats = gs.get("stats", {}).get("pii-detection", {})
+    stats_raw = gs.get("stats", {})
+    total_hits = gs.get("total_hits", 0)
+    pii_stats = stats_raw.get("pii-detection", {})
     if isinstance(pii_stats, dict):
         total = pii_stats.get("total", 0)
     else:
         total = 0
-    assert total > 0, f"PII guard hit not recorded (got {total})"
+    assert total > 0, (
+        f"PII guard hit not recorded. "
+        f"total_hits={total_hits}, "
+        f"stats_keys={list(stats_raw.keys()) if isinstance(stats_raw, dict) else type(stats_raw)}, "
+        f"pii_stats={pii_stats}"
+    )
     print(f"  ✅ PII guard hit recorded (total hits: {total})")
 
 
@@ -405,6 +439,7 @@ def main() -> None:
         sys.exit(1)
 
     try:
+        step0_check_config()
         step1_normal_request()
         step2_pii_redact()
         step3_injection_block()
