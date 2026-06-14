@@ -24,6 +24,7 @@ from gateway.trace.store import TraceStore
 from gateway.trace.engine import TraceEngine
 from gateway.policy.store import PolicyStore
 from gateway.guardrails.engine import GuardrailsEngine
+from gateway.guardrails.sqlite_session import SQLiteSessionStore
 from gateway.budget.rate_limiter import SlidingWindowRateLimiter, RateLimitConfig
 from gateway.budget.token_counter import TokenCounter
 from gateway.budget.circuit_breaker import CircuitBreaker
@@ -91,6 +92,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         _guardrails_engine = GuardrailsEngine.from_policy_store(_policy_store)
     else:
         _guardrails_engine = GuardrailsEngine()
+
+    # Session store — persisted in SQLite so behavioural state
+    # (jailbreak scores, tool-call history) survives restarts.
+    # Uses a separate sync sqlite3 connection to avoid asyncio bridge issues.
+    session_store = SQLiteSessionStore(db_path=app.state.settings.db_path)
+    session_store.initialize()
+    _guardrails_engine._session_store = session_store
 
     # Budget
     budget_cfg = _policy_store.budget_config()
@@ -192,6 +200,12 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "ok", "version": "0.1.0", "host": config.host, "port": config.port}
 
+    @app.get("/metrics")
+    async def metrics():
+        from gateway.metrics import metrics_response
+        from fastapi.responses import Response
+        return Response(content=metrics_response(), media_type="text/plain")
+
     # Traces
     @app.api_route("/api/traces/stats", methods=["GET"], tags=["traces"])
     async def get_stats(hours: int = 24):
@@ -257,6 +271,27 @@ def run_server() -> None:
     config = load_config()
     # reload=True is dev-only and breaks in containers (watcher exits code 0)
     uvicorn.run("gateway.main:create_app", factory=True, host=config.host, port=config.port)
+
+
+def validate_config() -> None:
+    """CLI entry point: validate config/*.yaml files without starting the server.
+
+    Usage: uv run validate-config
+    """
+    import sys
+    from gateway.policy.store import PolicyStore
+
+    config_dir = os.environ.get("GATEWAY_CONFIG_DIR", "./config")
+    try:
+        store = PolicyStore(config_dir=config_dir)
+        store.reload()
+        policy = store.policy
+        print(f"Config OK — {len(policy.guardrails.rules)} guardrail rules, "
+              f"{len(policy.proxy.providers)} provider(s)")
+        sys.exit(0)
+    except Exception as e:
+        print(f"Config ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 app = create_app()

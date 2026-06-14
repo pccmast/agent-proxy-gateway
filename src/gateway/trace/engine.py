@@ -327,6 +327,11 @@ class TraceEngine:
             await self._update_trace_stats(params.trace_id)
         except Exception as exc:
             self._store.write_failures += 1
+            try:
+                from gateway.metrics import trace_write_failures_total
+                trace_write_failures_total.set(self._store.write_failures)
+            except Exception:
+                pass
             logger.error(
                 "finish_span_persist_failed",
                 trace_id=params.trace_id,
@@ -344,6 +349,13 @@ class TraceEngine:
             latency_ms=round(latency_ms, 1),
             cost=round(cost, 6),
         )
+
+        # Prometheus instrumentation — every span completion is recorded
+        try:
+            from gateway.metrics import record_request
+            record_request(status=params.status, latency_s=latency_ms / 1000.0)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # 僵尸 span 清理

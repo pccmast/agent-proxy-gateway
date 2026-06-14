@@ -223,6 +223,7 @@ class ProxyEngine:
             except httpx.TimeoutException:
                 if self.circuit_breaker:
                     self.circuit_breaker.record_failure()
+                    self._record_cb_failure()
                 logger.error("upstream_timeout", upstream_url=upstream_url, trace_id=trace_id)
                 if self.trace_engine and trace_id:
                     from shared.models import SpanFinishParams
@@ -244,6 +245,7 @@ class ProxyEngine:
             except httpx.ConnectError as e:
                 if self.circuit_breaker:
                     self.circuit_breaker.record_failure()
+                    self._record_cb_failure()
                 logger.error("upstream_connect_error", upstream_url=upstream_url, error=str(e))
                 if self.trace_engine and trace_id:
                     from shared.models import SpanFinishParams
@@ -345,6 +347,7 @@ class ProxyEngine:
         if response.status_code >= 500:
             if self.circuit_breaker:
                 self.circuit_breaker.record_failure()
+                self._record_cb_failure()
             if self.trace_engine and ctx.trace_id:
                 from shared.models import SpanFinishParams
                 await self.trace_engine.finish_span(
@@ -429,6 +432,7 @@ class ProxyEngine:
         # Circuit breaker: non-stream response received successfully
         if self.circuit_breaker:
             self.circuit_breaker.record_success()
+            self._update_cb_gauge()
 
         return JSONResponse(
             content=raw_resp,
@@ -491,3 +495,22 @@ class ProxyEngine:
         if self._client:
             await self._client.aclose()
             self._client = None
+
+    @staticmethod
+    def _update_cb_gauge() -> None:
+        """Update the circuit-breaker Prometheus gauge (no-op if prometheus not available)."""
+        try:
+            from gateway.metrics import circuit_breaker_state as cb_gauge
+            # We don't have provider context here, use "default"
+            cb_gauge.labels(provider="default").set(0)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _record_cb_failure() -> None:
+        """Record a circuit-breaker failure and update the Prometheus gauge."""
+        try:
+            from gateway.metrics import circuit_breaker_state as cb_gauge
+            cb_gauge.labels(provider="default").set(1)
+        except Exception:
+            pass
