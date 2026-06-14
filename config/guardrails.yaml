@@ -26,6 +26,7 @@ guardrails:
     - id: "content-safety"
       type: "content"
       action: "block"
+      confidence_threshold: 0.5
       enabled: true
       description: "Block unsafe content (violence, self-harm, illegal)"
       keywords: []
