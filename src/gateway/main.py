@@ -27,6 +27,7 @@ from gateway.guardrails.engine import GuardrailsEngine
 from gateway.budget.rate_limiter import SlidingWindowRateLimiter, RateLimitConfig
 from gateway.budget.token_counter import TokenCounter
 from gateway.budget.circuit_breaker import CircuitBreaker
+from gateway.budget.request_timeout import RequestTimeoutGuard
 from gateway.eval.pipeline import EvalPipeline
 from gateway.eval.llm_judge import LLMJudgeEvaluator
 
@@ -136,6 +137,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Middleware chain
     chain = MiddlewareChain()
+    chain.add(RequestTimeoutGuard(total_timeout_seconds=60.0))
     if _guardrails_engine.rules:
         chain.add(_guardrails_engine)
     chain.add(_rate_limiter)

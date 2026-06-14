@@ -205,17 +205,27 @@ class AnthropicAdapter(ProtocolAdapter):
         )
 
     def get_upstream_url(self, path: str, base_url: str) -> str:
-        """Build the Anthropic upstream URL."""
+        """Build the Anthropic upstream URL — avoids double /v1."""
         base = base_url.rstrip("/")
-        if not base.endswith("/v1") and not path.startswith("/v1"):
-            return base + path
-        return base + path
+        # If both base and path carry /v1, strip the prefix from one side
+        # to avoid: https://api.anthropic.com/v1 + /v1/messages
+        #         → https://api.anthropic.com/v1/v1/messages
+        normalized_path = path
+        if base.endswith("/v1") and path.startswith("/v1"):
+            normalized_path = path[3:]  # "/v1/messages" → "/messages"
+        return base + normalized_path
 
-    def get_upstream_headers(self, original_headers: dict[str, str], api_key: str) -> dict[str, str]:
+    def get_upstream_headers(self, original_headers: dict[str, str], api_key: str, base_url: str = "") -> dict[str, str]:
         """Replace auth headers with Anthropic's x-api-key format."""
         skip = {"host", "x-api-key", "authorization", "transfer-encoding"}
         headers = {k: v for k, v in original_headers.items() if k.lower() not in skip}
         headers["x-api-key"] = api_key
-        headers["Host"] = "api.anthropic.com"
+        # Derive Host from base_url when available, fallback to api.anthropic.com
+        if base_url:
+            from urllib.parse import urlparse
+            host = urlparse(base_url).netloc
+            headers["Host"] = host if host else "api.anthropic.com"
+        else:
+            headers["Host"] = "api.anthropic.com"
         headers["anthropic-version"] = original_headers.get("anthropic-version", "2023-06-01")
         return headers

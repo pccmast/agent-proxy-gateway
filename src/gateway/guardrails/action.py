@@ -17,6 +17,8 @@ def apply_redact(text: str, matches: list[str]) -> str:
 
     Matches are sorted by length descending to avoid partial-string replacement
     issues (e.g. a shorter match prefixing a longer one).
+    Uses case-insensitive replacement so guardrail rules that match with
+    ``re.IGNORECASE`` patterns are properly redacted.
     """
     if not matches or not text:
         return text
@@ -25,7 +27,7 @@ def apply_redact(text: str, matches: list[str]) -> str:
     deduped = sorted(set(matches), key=len, reverse=True)
     result = text
     for match in deduped:
-        result = result.replace(match, "[REDACTED]")
+        result = re.sub(re.escape(match), "[REDACTED]", result, flags=re.IGNORECASE)
     return result
 
 

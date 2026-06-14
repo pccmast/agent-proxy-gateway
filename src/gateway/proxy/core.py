@@ -15,6 +15,7 @@ from typing import Any
 
 import httpx
 import os
+import asyncio
 from fastapi import Request, Response
 from fastapi.responses import StreamingResponse, JSONResponse
 
@@ -194,15 +195,31 @@ class ProxyEngine:
             )
 
             try:
+                # Apply full-link timeout if RequestTimeoutGuard (P3) set a deadline.
+                # Compute remaining budget and enforce via asyncio.wait_for on the
+                # forward+processing coroutine. Non-stream and stream paths are
+                # handled identically — wait_for wraps the entire forward.
+                remaining = (
+                    ctx.timeout_deadline - asyncio.get_running_loop().time()
+                    if ctx.timeout_deadline > 0
+                    else None
+                )
+                if remaining is not None and remaining <= 0:
+                    raise asyncio.TimeoutError()
+
                 client = await self._get_client()
                 if normalized_req.stream:
-                    return await self._forward_stream(
+                    forward_coro = self._forward_stream(
                         client, upstream_url, upstream_headers, raw_body, adapter, ctx
                     )
                 else:
-                    return await self._forward_non_stream(
+                    forward_coro = self._forward_non_stream(
                         client, upstream_url, upstream_headers, raw_body, adapter, ctx
                     )
+
+                if remaining is not None:
+                    return await asyncio.wait_for(forward_coro, timeout=remaining)
+                return await forward_coro
             except httpx.TimeoutException:
                 if self.circuit_breaker:
                     self.circuit_breaker.record_failure()
@@ -245,6 +262,36 @@ class ProxyEngine:
                     status_code=502,
                     content={"error": f"Cannot connect to upstream: {str(e)}"},
                 )
+
+        except asyncio.TimeoutError:
+            # Full-link timeout enforced by RequestTimeoutGuard (P3)
+            remaining = 0.0
+            if ctx.timeout_deadline > 0:
+                remaining = max(0.0, ctx.timeout_deadline - asyncio.get_running_loop().time())
+            logger.error(
+                "request_timeout",
+                trace_id=trace_id,
+                timeout_seconds=ctx.timeout_seconds,
+                remaining=round(remaining, 2),
+            )
+            if self.trace_engine and trace_id:
+                from shared.models import SpanFinishParams
+
+                await self.trace_engine.finish_span(
+                    SpanFinishParams(
+                        trace_id=trace_id,
+                        span_id=span_id,
+                        status="timeout",
+                        error_message=f"Request timed out after {ctx.timeout_seconds:.0f}s (P3 full-link guard)",
+                        request_body=raw_body,
+                    )
+                )
+            return JSONResponse(
+                status_code=504,
+                content={
+                    "error": f"Gateway request timeout ({ctx.timeout_seconds:.0f}s)",
+                },
+            )
 
         except Exception as exc:
             # Catch-all: prevent orphan traces from unhandled exceptions

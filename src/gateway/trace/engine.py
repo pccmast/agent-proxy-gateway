@@ -405,7 +405,7 @@ class TraceEngine:
             return None
         tree = SpanTree(spans)
         store = self._store if load_content else None
-        root = tree.build(store=store)
+        root = await tree.build(store=store)
         return SpanTree.to_dict(root)
 
     async def get_stats(self, hours: int = 24) -> dict[str, object]:

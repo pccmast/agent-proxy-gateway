@@ -241,6 +241,8 @@ class RequestContext(BaseModel):
     path: str = ""
     provider: str = ""
     guard_results: list[GuardResult] = Field(default_factory=list)
+    timeout_deadline: float = 0.0   # set by RequestTimeoutGuard (P3)
+    timeout_seconds: float = 0.0
 
 
 class ResponseContext(BaseModel):

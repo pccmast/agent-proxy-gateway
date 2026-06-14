@@ -40,6 +40,7 @@ logger = get_logger()
 INPUT_RULE_TYPES = {
     "injection", "pii", "content", "content_safety",
     "system_prompt_extraction", "topic_restriction",
+    "credential_leak",
 }
 OUTPUT_RULE_TYPES = {
     "system_prompt_leakage", "excessive_agency",

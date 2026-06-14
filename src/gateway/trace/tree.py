@@ -139,7 +139,7 @@ class SpanTree:
         # Cast through `object` to satisfy strict type checker.
         self._spans: list[_SpanRow] = [cast(_SpanRow, cast(object, s)) for s in spans]
 
-    def build(
+    async def build(
         self,
         store: "TraceStore | None" = None,
     ) -> SpanNode | None:
@@ -231,74 +231,37 @@ class SpanTree:
 
         # Load span_contents if store is provided
         if store is not None and content_ids:
-            self._load_span_contents_sync(nodes, content_ids, store)
+            await self._load_span_contents(nodes, content_ids, store)
 
         return root
 
-    def _load_span_contents_sync(
+    async def _load_span_contents(
         self,
         nodes: dict[str, SpanNode],
         content_ids: list[str],
         store: "TraceStore",
     ) -> None:
-        """Synchronously load span_contents for given content_ids.
+        """Asynchronously load span_contents for given content_ids.
 
-        Uses asyncio.run() to bridge the async store API in a sync context.
-        Only called from build() when store is provided.
+        Called from the async build() method — safe within the running event loop.
         """
-        import asyncio
+        from collections.abc import Awaitable
 
-        async def _load() -> None:
-            from collections.abc import Awaitable
+        tasks: list[Awaitable[object]] = [
+            store.get_span_content(cid) for cid in content_ids
+        ]
+        results = await asyncio.gather(*tasks)
 
-            tasks: list[Awaitable[object]] = [
-                store.get_span_content(cid) for cid in content_ids
-            ]
-            results = await asyncio.gather(*tasks)
-
-            for cid, result in zip(content_ids, results):
-                if result is None or not isinstance(result, dict):
-                    continue
-                # Find the span node that owns this content_id
-                for node in nodes.values():
-                    if node.content_id == cid:
-                        rb = result.get("request_body")
-                        resp_b = result.get("response_body")
-                        node.request_body = rb if isinstance(rb, str) else None
-                        node.response_body = resp_b if isinstance(resp_b, str) else None
-                        break
-
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # We're inside an event loop; must run with create_task + synchronization
-                # For simplicity, defer to a synchronous approach
-                import concurrent.futures
-                import threading
-
-                done_event = threading.Event()
-                exc: Exception | None = None
-
-                async def _load_wrapper() -> None:
-                    nonlocal exc
-                    try:
-                        await _load()
-                    except Exception as e:
-                        exc = e
-                    finally:
-                        done_event.set()
-
-                loop.create_task(_load_wrapper())
-                # Give the event loop a chance to process
-                # In practice, this path is rare; most tests run inside an event loop
-                done_event.wait(timeout=10)
-                if exc:
-                    raise exc
-            else:
-                asyncio.run(_load())
-        except RuntimeError:
-            # No event loop, we can use asyncio.run
-            asyncio.run(_load())
+        for cid, result in zip(content_ids, results):
+            if result is None or not isinstance(result, dict):
+                continue
+            for node in nodes.values():
+                if node.content_id == cid:
+                    rb = result.get("request_body")
+                    resp_b = result.get("response_body")
+                    node.request_body = rb if isinstance(rb, str) else None
+                    node.response_body = resp_b if isinstance(resp_b, str) else None
+                    break
 
     def _compute_tree(self, node: SpanNode, depth: int) -> None:
         """Recursively compute depth and aggregate subtree statistics."""
