@@ -127,7 +127,15 @@ class Reporter:
         print(f"{_c('BOLD')}─── Results ({total_s:.1f}s) ──{_c('RESET')}")
         for r in self.results:
             s = f"{_c(str(r['status']))}{r['status']:<6}{_c('RESET')}"
-            print(f"  {s} {str(r['name']):<28}  {str(r.get('code','')):<6}  {str(r.get('elapsed_ms',''))}ms")
+            line = f"  {s} {str(r['name']):<28}  {str(r.get('code','')):<6}  {str(r.get('elapsed_ms',''))}ms"
+            print(line)
+            # Print failure detail — shows what actually came back
+            detail = str(r.get("detail", ""))
+            if detail:
+                print(f"  {_c('DIM')}     ↳ {detail}{_c('RESET')}")
+            resp_preview = str(r.get("response_preview", ""))
+            if resp_preview:
+                print(f"  {_c('DIM')}     ↳ body: {resp_preview}{_c('RESET')}")
         passed = sum(1 for r in self.results if r["status"] == "PASS")
         failed = sum(1 for r in self.results if r["status"] == "FAIL")
         skipped = sum(1 for r in self.results if r["status"] == "SKIP")
@@ -159,6 +167,7 @@ def _run(base_url: str, check: dict[str, object], reporter: Reporter, timeout: i
         if code not in acceptable:
             info["status"] = "FAIL"
             info["detail"] = f"expected {acceptable}, got {code}"
+            info["response_preview"] = resp[:200]
             reporter.add(info)
             return
 
@@ -166,6 +175,7 @@ def _run(base_url: str, check: dict[str, object], reporter: Reporter, timeout: i
         if expected_text and isinstance(expected_text, str) and expected_text not in resp:
             info["status"] = "FAIL"
             info["detail"] = f"body missing '{expected_text}'"
+            info["response_preview"] = resp[:200]
             reporter.add(info)
             return
 
