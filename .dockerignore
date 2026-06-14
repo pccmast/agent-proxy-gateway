@@ -9,8 +9,24 @@ __pycache__
 *.egg-info
 dist/
 build/
-data/*.db
-test_output.txt
-*_new_main.py
+data/
+config/*.bak
+
+# IDE / tools
+.vscode/
+.idea/
+.workbuddy/
+
+# Benchmark — not needed in container
+benchmark/
+benchmark_v2/
+
+# Documentation drafts
+projects_md/
+
+# Build / test artifacts
+pyright*
+
+# Legacy — kept out of image
 fix_core.py
-_fix_core.py
+*_new_main.py
