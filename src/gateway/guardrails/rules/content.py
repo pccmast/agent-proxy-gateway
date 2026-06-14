@@ -9,22 +9,38 @@ from .base import BaseGuardRule
 if TYPE_CHECKING:
     from ..config import SessionState
 
-# Default keywords — categorized for clarity
+# Keyword list design principles:
+# 1. High signal-to-noise — prefer tokens that rarely appear in benign contexts
+#    when combined with safety-intent language (e.g. "murder" > "kill" because
+#    "kill" can appear in "kill the process" or "kill two birds with one stone").
+# 2. Compact per category (~5-8 items) — maintainable, auditable.
+#    The confidence formula (base + category_bonus) naturally requires multiple
+#    hits to reach BLOCK threshold, so a single word won't cause false positives.
+# 3. Multi-word phrases for precision where ambiguity exists
+#    (e.g. "kill myself" vs "kill", "hate speech" vs "hate").
+# 4. Cross-language awareness — these are English only; a production deployment
+#    should layer a translation step or per-language lists for non-English content.
+
 _DEFAULT_KEYWORDS: dict[str, list[str]] = {
+    # ── violence ──
     "violence": [
-        "kill", "murder", "massacre", "slaughter", "torture", "maim",
-        "assassinate", "execute", "bomb", "shoot", "stab",
+        "murder", "massacre", "torture", "slaughter", "assassinate", "maim",
+        "kill", "bomb", "shoot", "stab",
     ],
+    # ── self-harm ──
     "self_harm": [
-        "suicide", "self-harm", "self harm", "cutting myself",
-        "kill myself", "end my life", "hurt myself",
+        "suicide", "kill myself", "end my life", "self-harm", "self harm",
+        "cut myself", "hurt myself",
     ],
+    # ── illegal activities ──
     "illegal": [
-        "counterfeit", "money laundering", "traffic", "smuggle",
-        "ransomware", "phishing kit", "exploit kit",
+        "fraud", "smuggle", "ransomware", "phishing",
+        "money laundering", "counterfeit", "hacking",
     ],
+    # ── hate speech ──
     "hate": [
         "hate speech", "racial slur", "discrimination", "supremacist",
+        "extremist",
     ],
 }
 
