@@ -187,20 +187,12 @@ class GuardrailsEngine(Middleware):
         agent_id = getattr(ctx, "provider", "default")
 
         # 执行 input_rules
-        logger.debug("on_request_input_rules", count=len(self._input_rules),
-                      text_len=len(full_text), model=model, agent_id=agent_id)
         for rule in self._input_rules:
             if not rule.is_enabled():
-                logger.debug("rule_skipped_disabled", rule_id=rule.rule_id)
                 continue
             if rule.scope and not ScopeMatcher.matches(rule.scope, model, agent_id):
-                logger.debug("rule_skipped_scope", rule_id=rule.rule_id, model=model,
-                              agent_id=agent_id, scope_models=rule.scope.models,
-                              scope_agents=rule.scope.agents)
                 continue
             result = await rule.check_input(full_text, session=session)
-            logger.debug("rule_checked", rule_id=rule.rule_id, matches=len(result.matches),
-                          action=str(result.action), confidence=result.confidence)
             await self._apply_guard_result(result, ctx, "input")
 
         # 执行 behavioral_rules (input 阶段)
