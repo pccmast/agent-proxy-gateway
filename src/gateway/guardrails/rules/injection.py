@@ -95,9 +95,15 @@ class InjectionDetectionRule(BaseGuardRule):
                 matches.append("base64_chain")
                 max_confidence = max(max_confidence, 0.7)
 
+        # Honour the configured confidence_threshold: weak matches are
+        # downgraded to LOG so they are recorded without blocking.
+        effective_action = self.action
+        if matches and max_confidence < self.confidence_threshold:
+            effective_action = GuardAction.LOG
+
         return GuardResult(
             rule_id=self.rule_id,
-            action=self.action,
+            action=effective_action,
             matches=matches,
             confidence=max_confidence,
             details=f"[{phase}] {len(matches)} injection pattern(s) matched",

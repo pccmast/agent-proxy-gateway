@@ -167,16 +167,22 @@ class ToolCallLoopRule(BaseGuardRule):
         # 更新 session 中的工具调用历史
         for tc in tool_calls:
             tool_name = tc.get("name", "")
-            session.tool_call_history.append({"name": tool_name, "arguments": tc.get("arguments", {})})
-            session.total_tool_calls += 1
 
-            # 检测连续同一工具调用
+            # 检测连续同一工具调用 — 和历史最后一条比较（追加之前）
             if session.tool_call_history:
                 last_name = session.tool_call_history[-1].get("name", "")
                 if tool_name == last_name:
                     session.consecutive_same_tool += 1
                 else:
                     session.consecutive_same_tool = 1
+            else:
+                session.consecutive_same_tool = 1
+
+            # 追加当前调用到历史（在检测之后）
+            session.tool_call_history.append(
+                {"name": tool_name, "arguments": tc.get("arguments", {})}
+            )
+            session.total_tool_calls += 1
 
             if session.consecutive_same_tool >= self._max_consecutive:
                 matched.append(f"consecutive:{tool_name}x{session.consecutive_same_tool}")

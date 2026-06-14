@@ -28,8 +28,12 @@ _FAST_PATH_PATTERNS: list[tuple[str, str]] = [
     (r"(?<!\d)[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx](?!\d)", "id_card_cn"),
     # Bank card number (16-19 digits, optional spaces/dashes)
     (r"\b(?:\d[ -]*?){13,19}\b", "bank_card"),
-    # Chinese name (2-4 Chinese characters)
-    (r"[\u4e00-\u9fff]{2,4}", "name_cn"),
+    # Chinese name — common surnames + 1-2 given-name characters.
+    # Anchored to surname prefix to avoid matching arbitrary 2-4 char sequences
+    # like "天气", "代码", "北京" that dominate normal Chinese conversation.
+    # Covers ~120 of the most common Chinese family names.
+    (r"(?:王|李|张|刘|陈|杨|黄|赵|周|吴|徐|孙|马|朱|胡|郭|何|高|林|罗|郑|梁|谢|宋|唐|许|韩|冯|邓|曹|彭|曾|肖|田|董|潘|袁|蔡|蒋|余|于|杜|叶|程|苏|魏|吕|丁|任|沈|姚|卢|姜|崔|钟|谭|陆|汪|范|石|廖|贾|夏|韦|傅|方|白|邹|孟|熊|秦|邱|江|尹|薛|闫|段|雷|侯|龙|史|黎|贺|顾|毛|郝|龚|邵|万|钱|覃|戴|严|莫|孔|向|常|冯|汤|赖|武|康|贺|余|施|牛|洪|龚)[\u4e00-\u9fff]{1,2})",
+        "name_cn"),
 ]
 
 

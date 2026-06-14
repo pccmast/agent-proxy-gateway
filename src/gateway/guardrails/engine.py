@@ -244,6 +244,8 @@ class GuardrailsEngine(Middleware):
         for rule in self._behavioral_rules:
             if not rule.is_enabled():
                 continue
+            if rule.scope and not ScopeMatcher.matches(rule.scope, model, agent_id):
+                continue
             result = await rule.check_output(output_text, session=session)
             await self._apply_guard_result(result, ctx, "output")
 
@@ -367,8 +369,12 @@ class GuardrailsEngine(Middleware):
         """从 context 获取或创建 session state."""
         if self._session_store is None:
             return None
-        session_id = getattr(ctx, "trace_id", None) or getattr(ctx, "span_id", "default")
-        return self._session_store.get_or_create(str(session_id))
+        session_id = getattr(ctx, "trace_id", None)
+        # Only use the caller-provided trace_id as a session key.
+        # NEVER fall back to a shared string — that would merge unrelated
+        # user sessions, corrupting escalation scores and violation counters.
+        if not session_id:
+            return None
 
     # ------------------------------------------------------------------- public
 

@@ -91,6 +91,12 @@ class ContentSafetyRule(BaseGuardRule):
         cat_bonus = min(len(categories_hit) * 0.15, 0.3)
         confidence = base + cat_bonus
 
+        # Honour the configured confidence_threshold: weak matches are
+        # downgraded to LOG so they are recorded without blocking traffic.
+        effective_action = self.action
+        if matches and confidence < self.confidence_threshold:
+            effective_action = GuardAction.LOG
+
         # 构建详细的分类型命中信息
         detail_parts = [f"{cat}={cnt}" for cat, cnt in sorted(category_counts.items())]
         detail_str = f"[{phase}] {len(matches)} match(es) | " + (
@@ -99,7 +105,7 @@ class ContentSafetyRule(BaseGuardRule):
 
         return GuardResult(
             rule_id=self.rule_id,
-            action=self.action,
+            action=effective_action,
             matches=matches,
             confidence=confidence,
             details=detail_str,

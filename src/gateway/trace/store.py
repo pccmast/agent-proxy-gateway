@@ -138,6 +138,7 @@ class TraceStore:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db: aiosqlite.Connection | None = None
+        self.write_failures: int = 0  # incremented on every failed INSERT/UPDATE
 
     # ------------------------------------------------------------------
     # 生命周期

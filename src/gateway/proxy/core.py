@@ -292,6 +292,32 @@ class ProxyEngine:
         """Forward a non-streaming request and return JSON response."""
         response = await client.post(url, json=body, headers=headers)
 
+        # Upstream returned a server error — the request failed at the LLM side.
+        # Record the failure for circuit-breaking and prevent the gateway
+        # from treating this as a successful forward.
+        if response.status_code >= 500:
+            if self.circuit_breaker:
+                self.circuit_breaker.record_failure()
+            if self.trace_engine and ctx.trace_id:
+                from shared.models import SpanFinishParams
+                await self.trace_engine.finish_span(
+                    SpanFinishParams(
+                        trace_id=ctx.trace_id,
+                        span_id=ctx.span_id,
+                        status="error",
+                        error_message=f"Upstream returned {response.status_code}",
+                        upstream_url=url,
+                        request_body=body,
+                    )
+                )
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "error": f"Upstream returned {response.status_code}",
+                    "detail": response.text[:500] if response.text else "",
+                },
+            )
+
         try:
             raw_resp = response.json()
         except Exception:

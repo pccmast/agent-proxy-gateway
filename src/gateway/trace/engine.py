@@ -326,11 +326,13 @@ class TraceEngine:
             # 聚合 trace 统计
             await self._update_trace_stats(params.trace_id)
         except Exception as exc:
+            self._store.write_failures += 1
             logger.error(
                 "finish_span_persist_failed",
                 trace_id=params.trace_id,
                 span_id=params.span_id,
                 error=str(exc),
+                total_failures=self._store.write_failures,
             )
             return
 
