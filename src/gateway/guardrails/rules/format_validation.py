@@ -23,7 +23,8 @@ class OutputFormatValidationRule(BaseGuardRule):
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)
         self._expected_format: str = str(self._config.get("expected_format", "text"))
-        self._json_schema: dict[str, object] | None = self._config.get("json_schema")
+        raw_schema = self._config.get("json_schema")
+        self._json_schema: dict[str, object] | None = raw_schema if isinstance(raw_schema, dict) else None
         self._on_mismatch: str = str(self._config.get("on_mismatch", "log"))
 
     async def check_input(

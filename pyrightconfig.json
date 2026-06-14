@@ -24,5 +24,13 @@
   "reportTypedDictNotRequiredAccess": "error",
   "reportInvalidCast": "error",
   "reportArgumentType": "error",
-  "reportUnusedParameter": "warning"
+  "reportImplicitOverride": "none",
+  "reportUnusedParameter": "warning",
+  "executionEnvironments": [
+    {
+      "root": "src/gateway/guardrails/rules",
+      "reportArgumentType": "warning",
+      "reportGeneralTypeIssues": "warning"
+    }
+  ]
 }

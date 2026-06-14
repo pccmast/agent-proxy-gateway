@@ -97,9 +97,8 @@ class SystemPromptLeakageRule(BaseGuardRule):
         self._match_threshold: int = int(self._config.get("match_threshold", 2))
         # 从环境变量获取系统提示（实际部署时从配置注入）
         import os
-        self._system_prompt: str = os.environ.get(
-            self._config.get("system_prompt_source", "SYSTEM_PROMPT"), ""
-        )
+        src = self._config.get("system_prompt_source", "SYSTEM_PROMPT")
+        self._system_prompt: str = os.environ.get(str(src), "")
 
     async def check_input(
         self, text: str, session: "SessionState | None" = None

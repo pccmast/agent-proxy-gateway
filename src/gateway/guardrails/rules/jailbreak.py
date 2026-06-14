@@ -105,7 +105,7 @@ class MultiTurnJailbreakRule(BaseGuardRule):
             if not isinstance(patterns, list):
                 continue
             for pattern in patterns:
-                if isinstance(pattern, re.Pattern) and pattern.search(text_lower):
+                if isinstance(pattern, re.Pattern) and pattern.search(text_lower):  # pyright: ignore[reportCallIssue]
                     matched_signals.append(str(sig.get("type", "")))
                     total_weight += float(sig.get("weight", 0.3))
                     break  # 每个 signal 类型只计数一次

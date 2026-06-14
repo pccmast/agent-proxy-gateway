@@ -135,7 +135,7 @@ class GuardrailsEngine(Middleware):
                 if not isinstance(rule_config, dict):
                     rule_config = {}
 
-                rule = cast(AnyType, rule_cls)(  # pyright: ignore[reportArgumentType]
+                rule = cast(AnyType, rule_cls)(
                     rule_id=cast(str, cfg.get("id", rule_type)),
                     action=cast(str, cfg.get("action", "log")),
                     severity=cast(str, cfg.get("severity", "medium")),
