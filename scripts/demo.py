@@ -28,7 +28,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
 import uuid
 from typing import Any
 
@@ -126,10 +125,6 @@ def step2_pii_redact() -> None:
     """Request containing PII — should be redacted by gateway, not forwarded."""
     step("PII Detection → REDACT")
 
-    # The PII regex fast-path should catch email + phone BEFORE the request
-    # is forwarded. If the gateway is working correctly, the body is redacted
-    # in-flight, but as long as we get a 200 or the guardrail hits are
-    # recorded, the test passes.
     resp = post("/v1/chat/completions", {
         "model": "deepseek-chat",
         "messages": [{
@@ -141,50 +136,25 @@ def step2_pii_redact() -> None:
     })
 
     print(f"  Status: {resp.status_code}")
-    if resp.status_code != 200 and resp.status_code not in (502, 504):
-        assert_status(resp, [200, 502, 504], "PII response")
-    else:
+    if resp.status_code == 200:
         data = resp.json()
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         print(f"  Response: {content}")
+        # PII should be redacted — the LLM should NOT mention specific PII
+        assert "alice@company.com" not in content, "PII leaked to LLM response"
+        assert "13812345678" not in content, "Phone leaked to LLM response"
+    else:
+        assert_status(resp, [200, 502, 504], "PII response")
 
-    # Check traces for PII guard hit
-    time.sleep(0.5)
-    traces = api_get("/api/traces?limit=10")
-    found = False
-    for t in traces.get("traces", []):
-        detail = api_get(f"/api/traces/{t['trace_id']}")
-        tree = detail.get("span_tree", {}) or {}
-        guard_hits = tree.get("guard_hits", [])
-        if isinstance(guard_hits, list):
-            for gh in guard_hits:
-                if isinstance(gh, dict) and "pii" in str(gh.get("rule_id", "")).lower():
-                    print(f"  ✅ PII guard hit recorded in trace {t['trace_id'][:8]}")
-                    found = True
-                    break
-        # Also check the flat guard_hits list if it exists
-        if isinstance(guard_hits, list) and any(
-            isinstance(h, str) and "pii" in h.lower() for h in guard_hits
-        ):
-            print(f"  ✅ PII guard hit recorded in trace {t['trace_id'][:8]}")
-            found = True
-            break
-        if found:
-            break
-    if not found:
-        print("  ⚠️  PII hit not found in recent traces — guard stats may tell more")
-        # Still check guard stats as fallback
-        try:
-            gs = api_get("/api/guardrails/stats")
-            pii_hits = gs.get("stats", {}).get("pii-detection", {})
-            if isinstance(pii_hits, dict):
-                total = pii_hits.get("total", 0)
-                if total > 0:
-                    print(f"  ✅ Guard stats show {total} PII hit(s)")
-                    found = True
-        except Exception:
-            pass
-    assert found, "PII guard hit not recorded"
+    # Check guardrail stats (in-memory, synchronously updated by _apply_guard_result)
+    gs = api_get("/api/guardrails/stats")
+    pii_stats = gs.get("stats", {}).get("pii-detection", {})
+    if isinstance(pii_stats, dict):
+        total = pii_stats.get("total", 0)
+    else:
+        total = 0
+    assert total > 0, f"PII guard hit not recorded (got {total})"
+    print(f"  ✅ PII guard hit recorded (total hits: {total})")
 
 
 def step3_injection_block() -> None:
