@@ -381,6 +381,7 @@ class ProxyEngine:
             span_id=ctx.span_id,
             request=ctx.request,
             response=normalized_resp,
+            guard_results=list(ctx.guard_results),  # preserve request-phase hits
         )
 
         # Middleware chain (response)

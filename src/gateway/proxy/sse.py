@@ -185,12 +185,16 @@ class SSEInterceptor:
                 raw_body=self.final_chunk_raw,
             )
 
+            # Merge request-phase guard_results (from run_request before streaming)
+            # with stream-phase guard_results accumulated during chunk processing.
+            all_guard = list(self.trace_context.guard_results) + self.guard_results
+
             resp_ctx = ResponseContext(
                 trace_id=self.trace_context.trace_id,
                 span_id=self.trace_context.span_id,
                 request=self.trace_context.request,
                 response=normalized_resp,
-                guard_results=self.guard_results,
+                guard_results=all_guard,
             )
 
             # Run middleware response phase
