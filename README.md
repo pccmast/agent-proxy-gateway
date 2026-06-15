@@ -245,9 +245,11 @@ agent-gateway/
 │   ├── app.py                # Streamlit dashboard entry
 │   └── pages/                # Overview, Traces, Guardrails, Budget, Eval
 ├── scripts/
-│   ├── demo.py               # End-to-end demo
-│   └── seed_data.py          # Test data generator
-├── tests/                    # Unit + integration tests
+│   ├── demo.py               # End-to-end demo (7 steps)
+│   ├── seed_data.py          # Test data generator
+│   ├── startup_check.py      # One-click startup verification
+│   └── docker_test.sh        # Docker smoke test (10 steps)
+├── tests/                    # 154 pytest functions (10 files, 3.4k lines)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── pyproject.toml
