@@ -376,6 +376,7 @@ class GuardrailsEngine(Middleware):
         # user sessions, corrupting escalation scores and violation counters.
         if not session_id:
             return None
+        return self._session_store.get_or_create(session_id)
 
     # ------------------------------------------------------------------- public
 
