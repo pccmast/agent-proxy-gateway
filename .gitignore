@@ -22,7 +22,7 @@ env/
 .env
 
 # Database
-data/*.db
+data/
 
 # OS
 .DS_Store
