@@ -53,8 +53,18 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Build gateway image
-        run: docker build --target gateway -t agent-gateway:latest .
+      - name: Set up Docker Buildx
+        run: docker buildx create --use
+
+      - name: Build gateway image (cached)
+        run: |
+          docker buildx build \
+            --target gateway \
+            --tag agent-gateway:latest \
+            --cache-to type=gha,scope=gateway,mode=max \
+            --cache-from type=gha,scope=gateway \
+            --load \
+            .
 
       - name: Smoke test gateway
         run: |
@@ -70,8 +80,16 @@ jobs:
         if: always()
         run: docker rm -f gw-smoke 2>/dev/null || true
 
-      - name: Build dashboard image
-        run: docker build --target dashboard -t agent-gateway-dashboard:latest .
+      - name: Build dashboard image (cached)
+        run: |
+          docker buildx build \
+            --target dashboard \
+            --tag agent-gateway-dashboard:latest \
+            --cache-to type=gha,scope=dashboard,mode=max \
+            --cache-from type=gha,scope=dashboard \
+            --cache-from type=gha,scope=gateway \
+            --load \
+            .
 
       - name: Smoke test dashboard
         run: |
