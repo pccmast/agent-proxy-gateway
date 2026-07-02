@@ -80,12 +80,13 @@ class GatewaySettings(BaseSettings):
 
 
 def load_config(config_dir: str | None = None) -> GatewaySettings:
-    """Load gateway configuration from .env + YAML."""
+    """Load gateway configuration with priority: env vars > .env > YAML > defaults."""
     settings = GatewaySettings()
     if config_dir:
         settings.config_dir = config_dir
 
     # Load proxy settings and provider configs from YAML
+    # YAML provides base values, but env vars / .env have higher priority.
     cfg_path = Path(settings.config_dir)
     if cfg_path.exists():
         for yaml_file in sorted(cfg_path.glob("*.yaml")):
@@ -95,13 +96,16 @@ def load_config(config_dir: str | None = None) -> GatewaySettings:
                 if isinstance(data, dict) and "proxy" in data:
                     proxy = data["proxy"]
                     if isinstance(proxy, dict):
-                        if "host" in proxy:
+                        # Only apply YAML values that ARE NOT already set via env/.env.
+                        # Check: if the current value equals the code default, it hasn't
+                        # been overridden by env/.env, so YAML can provide the value.
+                        if "host" in proxy and settings.host == DEFAULT_GATEWAY_HOST:
                             settings.host = proxy["host"]
-                        if "port" in proxy:
+                        if "port" in proxy and settings.port == DEFAULT_GATEWAY_PORT:
                             settings.port = proxy["port"]
-                        if "upstream_timeout" in proxy:
+                        if "upstream_timeout" in proxy and settings.upstream_timeout == 120:
                             settings.upstream_timeout = proxy["upstream_timeout"]
-                        # Load provider configs for dynamic API key lookup
+                        # Load provider configs (always from YAML — no env override here)
                         if "providers" in proxy and isinstance(proxy["providers"], dict):
                             settings._provider_configs = proxy["providers"]
             except Exception:

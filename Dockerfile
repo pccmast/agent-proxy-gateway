@@ -34,7 +34,7 @@ RUN pip install --no-cache-dir uv
 ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src \
     GATEWAY_HOST=0.0.0.0 \
-    GATEWAY_PORT=8080 \
+    GATEWAY_PORT=18080 \
     GATEWAY_CONFIG_DIR=/app/config
 
 
@@ -63,7 +63,7 @@ COPY config/ ./config/
 COPY src/ ./src/
 RUN mkdir -p /app/data
 
-EXPOSE 8080
+EXPOSE 18080
 CMD ["python", "-m", "gateway.main"]
 
 
