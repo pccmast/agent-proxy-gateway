@@ -29,7 +29,7 @@ services:
       target: dashboard
     container_name: agent-gateway-dashboard
     ports:
-      - "8501:8501"
+      - "8502:8502"
     environment:
       - GATEWAY_URL=http://gateway:18080
     depends_on:

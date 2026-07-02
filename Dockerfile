@@ -82,5 +82,5 @@ RUN uv pip install --system \
 COPY dashboard/ ./dashboard/
 # Dashboard reads gateway via HTTP, no need to copy config/src
 
-EXPOSE 8501
-CMD ["streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+EXPOSE 8502
+CMD ["streamlit", "run", "dashboard/app.py", "--server.port=8502", "--server.address=0.0.0.0"]

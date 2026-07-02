@@ -72,7 +72,7 @@ uv run gateway
 
 # （可选）启动仪表盘
 uv run streamlit run dashboard/app.py
-# → http://localhost:8501
+# → http://localhost:8502
 ```
 
 ### 测试验证

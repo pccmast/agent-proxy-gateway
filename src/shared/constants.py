@@ -9,7 +9,7 @@ Changing a value only requires editing this file — every consumer imports from
 # ---------------------------------------------------------------------------
 DEFAULT_GATEWAY_HOST: str = "0.0.0.0"
 DEFAULT_GATEWAY_PORT: int = 18080
-DEFAULT_DASHBOARD_PORT: int = 8501
+DEFAULT_DASHBOARD_PORT: int = 8502
 
 # ---------------------------------------------------------------------------
 # Derived URLs (convenience)

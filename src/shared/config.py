@@ -43,7 +43,7 @@ class GatewaySettings(BaseSettings):
     db_path: str = "data/gateway.db"
 
     # Dashboard
-    dashboard_port: int = 8501
+    dashboard_port: int = 8502
 
     # Provider configs loaded from YAML (base_url, api_key_env, default_model)
     _provider_configs: dict[str, dict[str, str]] = {}

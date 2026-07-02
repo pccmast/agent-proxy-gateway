@@ -8,7 +8,7 @@
 #
 # Env vars:
 #   GATEWAY_URL     default http://localhost:18080
-#   DASHBOARD_URL   default http://localhost:8501
+#   DASHBOARD_URL   default http://localhost:8502
 #   TIMEOUT_SECONDS default 90
 #   KEEP_RUNNING=1  don't tear down after test (manual inspection)
 #   VERBOSE=1       print response bodies for every check
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:18080}"
-DASHBOARD_URL="${DASHBOARD_URL:-http://localhost:8501}"
+DASHBOARD_URL="${DASHBOARD_URL:-http://localhost:8502}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-90}"
 TMPDIR="${TMPDIR:-/tmp}"
 LOG_FILE="$TMPDIR/gateway_docker_test_$$.log"

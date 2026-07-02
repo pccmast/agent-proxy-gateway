@@ -8,17 +8,10 @@ import os
 
 import pytest
 
-from shared.constants import DEFAULT_GATEWAY_URL
+from shared.constants import DEFAULT_DASHBOARD_URL, DEFAULT_GATEWAY_URL
 
-# Ensure OPENAI_API_KEY is available for integration tests
-# Skip if no API key configured
-pytestmark = [
-    pytest.mark.integration,
-    pytest.mark.skipif(
-        not os.environ.get("OPENAI_API_KEY"),
-        reason="OPENAI_API_KEY not set — set it to run integration tests",
-    ),
-]
+# All tests in this module are integration tests.
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
@@ -26,6 +19,15 @@ def gateway_url():
     return os.environ.get("GATEWAY_URL", DEFAULT_GATEWAY_URL)
 
 
+@pytest.fixture
+def dashboard_url():
+    return os.environ.get("DASHBOARD_URL", DEFAULT_DASHBOARD_URL)
+
+
+@pytest.mark.skipif(
+    not os.environ.get("OPENAI_API_KEY"),
+    reason="OPENAI_API_KEY not set — set it to run gateway integration tests",
+)
 class TestGatewayIntegration:
     """End-to-end integration tests against the running gateway.
 
@@ -232,3 +234,26 @@ class TestGatewayUnit:
         assert exc.reason == "testing"
         assert exc.status_code == 403
         assert "test-rule" in str(exc)
+
+
+class TestDashboardIntegration:
+    """Dashboard smoke tests — verify the Streamlit dashboard is up.
+
+    Requires a running dashboard instance on localhost:{DEFAULT_DASHBOARD_PORT}.
+    No API key needed here; dashboard is read-only frontend.
+    """
+
+    def test_health_endpoint(self, dashboard_url):
+        """Streamlit's built-in health check (_stcore/health) should return ok."""
+        import httpx
+
+        resp = httpx.get(f"{dashboard_url}/_stcore/health", timeout=5)
+        assert resp.status_code == 200
+        assert resp.text.strip() == "ok"
+
+    def test_page_loads(self, dashboard_url):
+        """Dashboard main page should return 200."""
+        import httpx
+
+        resp = httpx.get(f"{dashboard_url}/", timeout=10, follow_redirects=True)
+        assert resp.status_code == 200
