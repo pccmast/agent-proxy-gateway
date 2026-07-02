@@ -54,19 +54,19 @@ class _CountingMiddleware(Middleware):
     async def on_request(self, ctx: RequestContext) -> RequestContext:
         self.calls.append(f"req:{self.instance_id}")
         if self._raise_on_request:
-            raise self._raise_on_request("test-reason")
+            raise self._raise_on_request("test-rule", "test-reason")
         return ctx
 
     async def on_response(self, ctx: ResponseContext) -> ResponseContext:
         self.calls.append(f"resp:{self.instance_id}")
         if self._raise_on_response:
-            raise self._raise_on_response("test-reason")
+            raise self._raise_on_response("test-rule", "test-reason")
         return ctx
 
     async def on_stream_chunk(self, chunk: StreamChunk, ctx: StreamContext) -> StreamChunk | None:
         self.calls.append(f"chk:{self.instance_id}")
         if self._raise_on_chunk:
-            raise self._raise_on_chunk("test-reason")
+            raise self._raise_on_chunk("test-rule", "test-reason")
         if self._drop_stream_chunk:
             return None
         return chunk

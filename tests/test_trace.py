@@ -376,12 +376,14 @@ class TestTraceStore:
 class TestSpanTree:
     """Tests for SpanTree builder (v2)."""
 
-    def test_empty_spans(self):
+    @pytest.mark.asyncio
+    async def test_empty_spans(self):
         """Should return None for empty span list."""
         tree = SpanTree([])
-        assert tree.build() is None
+        assert await tree.build() is None
 
-    def test_single_span(self):
+    @pytest.mark.asyncio
+    async def test_single_span(self):
         """Should build a single-node tree."""
         spans = [
             {
@@ -400,13 +402,14 @@ class TestSpanTree:
             }
         ]
         tree = SpanTree(spans)
-        root = tree.build()
+        root = await tree.build()
         assert root is not None
         assert root.span_id == "span1"
         assert root.total_tokens == 15
         assert root.subtree_tokens == 15
 
-    def test_nested_spans(self):
+    @pytest.mark.asyncio
+    async def test_nested_spans(self):
         """Should build a tree with parent-child relationships."""
         spans = [
             {
@@ -439,7 +442,7 @@ class TestSpanTree:
             },
         ]
         tree = SpanTree(spans)
-        root = tree.build()
+        root = await tree.build()
         assert root is not None
         assert len(root.children) == 1
         assert root.children[0].span_id == "span2"
@@ -447,7 +450,8 @@ class TestSpanTree:
         assert root.subtree_tokens == 15 + 8
         assert root.subtree_latency_ms == 150.0
 
-    def test_to_dict(self):
+    @pytest.mark.asyncio
+    async def test_to_dict(self):
         """Should serialize tree to nested dict."""
         spans = [
             {
@@ -468,7 +472,7 @@ class TestSpanTree:
             }
         ]
         tree = SpanTree(spans)
-        root = tree.build()
+        root = await tree.build()
         result = SpanTree.to_dict(root)
         assert result is not None
         assert result["span_id"] == "span1"
@@ -481,7 +485,8 @@ class TestSpanTree:
         assert result["eval_scores"][0]["score"] == 0.9
         assert result["children"] == []
 
-    def test_to_dict_includes_new_fields(self):
+    @pytest.mark.asyncio
+    async def test_to_dict_includes_new_fields(self):
         """to_dict() 序列化包含 P0-P3 新字段"""
         spans = [
             {
@@ -511,7 +516,7 @@ class TestSpanTree:
             }
         ]
         tree = SpanTree(spans)
-        root = tree.build()
+        root = await tree.build()
         result = SpanTree.to_dict(root)
         assert result is not None
         assert result["is_stream"] is True
@@ -527,7 +532,8 @@ class TestSpanTree:
         assert len(result["tool_calls"]) == 1
         assert result["tool_calls"][0]["name"] == "search"
 
-    def test_guard_hits_parsed_as_records(self):
+    @pytest.mark.asyncio
+    async def test_guard_hits_parsed_as_records(self):
         """guard_hits_json 反序列化为 GuardHitRecord 对象"""
         spans = [
             {
@@ -556,7 +562,7 @@ class TestSpanTree:
             }
         ]
         tree = SpanTree(spans)
-        root = tree.build()
+        root = await tree.build()
         assert root is not None
         assert len(root.guard_hits) == 1
         hit = root.guard_hits[0]
@@ -566,7 +572,8 @@ class TestSpanTree:
         assert hit.matches == ["138****"]
         assert hit.confidence == 0.95
 
-    def test_eval_scores_parsed_as_records(self):
+    @pytest.mark.asyncio
+    async def test_eval_scores_parsed_as_records(self):
         """eval_scores_json 反序列化为 EvalScoreRecord 对象"""
         spans = [
             {
@@ -590,14 +597,15 @@ class TestSpanTree:
             }
         ]
         tree = SpanTree(spans)
-        root = tree.build()
+        root = await tree.build()
         assert root is not None
         assert len(root.eval_scores) == 2
         assert isinstance(root.eval_scores[0], EvalScoreRecord)
         assert root.eval_scores[0].name == "relevance"
         assert root.eval_scores[0].score == 0.88
 
-    def test_tool_calls_parsed_from_json(self):
+    @pytest.mark.asyncio
+    async def test_tool_calls_parsed_from_json(self):
         """tool_calls_json 反序列化为 ToolCall 列表"""
         spans = [
             {
@@ -622,7 +630,7 @@ class TestSpanTree:
             }
         ]
         tree = SpanTree(spans)
-        root = tree.build()
+        root = await tree.build()
         assert root is not None
         assert root.tool_calls is not None
         assert len(root.tool_calls) == 2

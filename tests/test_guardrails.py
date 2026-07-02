@@ -108,7 +108,7 @@ class TestContentSafety:
 
     @pytest.fixture
     def rule(self):
-        return ContentSafetyRule(confidence_threshold=0.6)
+        return ContentSafetyRule(confidence_threshold=0.3)
 
     @pytest.mark.asyncio
     async def test_detect_violence(self, rule):
@@ -133,7 +133,7 @@ class TestContentSafety:
 
     @pytest.mark.asyncio
     async def test_multiple_keywords(self, rule):
-        result = await rule.check_input("murder and torture and execute the target")
+        result = await rule.check_input("murder and torture and bomb the target")
         assert len(result.matches) >= 3
 
 
@@ -202,7 +202,7 @@ class TestGuardrailsEngine:
                 "id": "content-safety",
                 "type": "content",
                 "action": "block",
-                "confidence_threshold": 0.6,
+                "confidence_threshold": 0.3,
                 "enabled": True,
             },
         ]

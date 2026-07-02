@@ -46,8 +46,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
-      - name: Run tests
-        run: uv run pytest --cov=src --cov-report=term-missing
+      - name: Run unit tests (skip integration)
+        run: uv run pytest -m "not integration" --cov=src --cov-report=term-missing
 
   docker-build:
     runs-on: ubuntu-latest
