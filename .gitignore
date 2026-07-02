@@ -43,6 +43,9 @@ htmlcov/
 benchmark/results/
 benchmark_v2/results/
 
+# Logs
+*.log
+
 # Backup files
 *.bak
 
