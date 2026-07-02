@@ -56,5 +56,33 @@ jobs:
       - name: Build gateway image
         run: docker build --target gateway -t agent-gateway:latest .
 
+      - name: Smoke test gateway
+        run: |
+          docker run -d --name gw-smoke -p 18080:18080 agent-gateway:latest
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:18080/health && break
+            sleep 2
+            echo "Waiting for gateway... ($i)"
+          done
+          curl -sf http://localhost:18080/health | grep '"ok"'
+
+      - name: Cleanup gateway
+        if: always()
+        run: docker rm -f gw-smoke 2>/dev/null || true
+
       - name: Build dashboard image
         run: docker build --target dashboard -t agent-gateway-dashboard:latest .
+
+      - name: Smoke test dashboard
+        run: |
+          docker run -d --name db-smoke -p 8599:8599 --env GATEWAY_URL=http://localhost:18080 agent-gateway-dashboard:latest
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:8599/_stcore/health && break
+            sleep 2
+            echo "Waiting for dashboard... ($i)"
+          done
+          curl -sf http://localhost:8599/_stcore/health | grep 'ok'
+
+      - name: Cleanup dashboard
+        if: always()
+        run: docker rm -f db-smoke 2>/dev/null || true
