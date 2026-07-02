@@ -14,7 +14,7 @@ import random
 import sqlite3
 import sys
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 # Add src to path
@@ -54,9 +54,7 @@ def _rand_int(min_v: int, max_v: int) -> int:
 
 
 def _rand_time(hours_back: int = 24) -> str:
-    return (datetime.now(timezone.utc) - timedelta(
-        hours=random.uniform(0, hours_back)
-    )).isoformat()
+    return (datetime.now(UTC) - timedelta(hours=random.uniform(0, hours_back))).isoformat()
 
 
 def generate_traces(count: int = 30) -> None:
@@ -144,10 +142,18 @@ def generate_traces(count: int = 30) -> None:
                  guard_hits, eval_scores, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    span_id, trace_id, parent_span_id,
-                    provider, model,
-                    status, prompt_tokens, completion_tokens, latency_ms,
-                    guard_hits, eval_scores, created,
+                    span_id,
+                    trace_id,
+                    parent_span_id,
+                    provider,
+                    model,
+                    status,
+                    prompt_tokens,
+                    completion_tokens,
+                    latency_ms,
+                    guard_hits,
+                    eval_scores,
+                    created,
                 ),
             )
 

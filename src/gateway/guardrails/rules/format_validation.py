@@ -3,7 +3,8 @@
 import json
 from typing import TYPE_CHECKING
 
-from shared.models import GuardResult, GuardAction
+from shared.models import GuardAction, GuardResult
+
 from .base import BaseGuardRule
 
 if TYPE_CHECKING:
@@ -27,14 +28,10 @@ class OutputFormatValidationRule(BaseGuardRule):
         self._json_schema: dict[str, object] | None = raw_schema if isinstance(raw_schema, dict) else None
         self._on_mismatch: str = str(self._config.get("on_mismatch", "log"))
 
-    async def check_input(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_input(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return GuardResult(rule_id=self.rule_id, action=self.action)
 
-    async def check_output(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_output(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, phase="output")
 
     def _check(self, text: str, phase: str) -> GuardResult:

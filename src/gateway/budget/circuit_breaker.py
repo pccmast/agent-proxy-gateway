@@ -12,9 +12,9 @@ State transitions:
   HALF_OPEN ──(probe failure)───────→ OPEN
 """
 
-import time
 import threading
-from enum import Enum
+import time
+from enum import StrEnum
 from typing import Any
 
 from shared.logging import get_logger
@@ -22,7 +22,7 @@ from shared.logging import get_logger
 logger = get_logger()
 
 
-class CircuitState(str, Enum):
+class CircuitState(StrEnum):
     CLOSED = "closed"
     OPEN = "open"
     HALF_OPEN = "half_open"

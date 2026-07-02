@@ -11,22 +11,23 @@ from shared.models import (
     Message,
     NormalizedRequest,
     NormalizedResponse,
-    TokenUsage,
     StreamChunk,
-    ToolDef,
+    TokenUsage,
     ToolCall,
+    ToolDef,
 )
-from .base import ProtocolAdapter
+
 from ._openai_types import (
-    OpenAIRequestBodyDict,
-    OpenAIResponseBodyDict,
-    OpenAIToolDict,
-    OpenAIToolCallDict,
-    OpenAIStreamChunkDict,
-    OpenAITokenUsageDict,
     OpenAIChoiceDict,
     OpenAIDeltaResponseDict,
+    OpenAIRequestBodyDict,
+    OpenAIResponseBodyDict,
+    OpenAIStreamChunkDict,
+    OpenAITokenUsageDict,
+    OpenAIToolCallDict,
+    OpenAIToolDict,
 )
+from .base import ProtocolAdapter
 
 # Sentinel: typed empty dict fallbacks so choices[0] won't produce Unknown types
 _EMPTY_CHOICE: OpenAIChoiceDict = {}
@@ -188,9 +189,7 @@ class OpenAIAdapter(ProtocolAdapter):
         If no gateway-level API key is configured, preserve the client's Authorization header.
         """
         headers = {
-            k: v
-            for k, v in original_headers.items()
-            if k.lower() not in ("host", "authorization", "transfer-encoding")
+            k: v for k, v in original_headers.items() if k.lower() not in ("host", "authorization", "transfer-encoding")
         }
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
@@ -202,6 +201,7 @@ class OpenAIAdapter(ProtocolAdapter):
         # Derive Host from base_url (e.g. "https://api.deepseek.com" -> "api.deepseek.com")
         if base_url:
             from urllib.parse import urlparse
+
             host = urlparse(base_url).netloc
             if host:
                 headers["Host"] = host

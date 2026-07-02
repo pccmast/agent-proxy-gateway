@@ -1,15 +1,16 @@
 """Trace module — distributed tracing for request lifecycle observability."""
 
+from shared.models import (
+    EvalScoreRecord,
+    GuardHitRecord,
+    SpanContent,
+    SpanFinishParams,
+    SpanStartParams,
+)
+
 from .engine import TraceEngine
 from .store import TraceStore
-from .tree import SpanTree, SpanNode
-from shared.models import (
-    SpanStartParams,
-    SpanFinishParams,
-    GuardHitRecord,
-    EvalScoreRecord,
-    SpanContent,
-)
+from .tree import SpanNode, SpanTree
 
 __all__ = [
     "TraceEngine",

@@ -15,13 +15,11 @@ Environment:
     GATEWAY_URL    - 可选，默认 http://127.0.0.1:18080
 """
 
-import json
 import os
 import subprocess
 import sys
 import time
-import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -32,12 +30,12 @@ import httpx
 # ---------------------------------------------------------------------------
 env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
-    with open(env_path, "r", encoding="utf-8") as f:
+    with open(env_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 key, value = line.split("=", 1)
-                os.environ.setdefault(key.strip(), value.strip().strip('"\''))
+                os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
 
 # ---------------------------------------------------------------------------
 # 配置
@@ -56,6 +54,7 @@ FAIL = "\033[91mFAIL\033[0m"
 SKIP = "\033[93mSKIP\033[0m"
 INFO = "\033[94mINFO\033[0m"
 WARN = "\033[93mWARN\033[0m"
+
 
 # ---------------------------------------------------------------------------
 # 结果记录
@@ -95,11 +94,15 @@ def http(method: str, path: str, **kwargs: Any) -> httpx.Response:
             return resp
     except Exception as e:
         # 构造一个伪响应对象用于错误报告
+        err_msg = str(e)
+
         class FakeResp:
             status_code = 0
-            text = str(e)
+            text = err_msg
+
             def json(self) -> dict[str, Any]:
-                return {"_error": str(e)}
+                return {"_error": err_msg}
+
         return FakeResp()  # type: ignore[return-value]
 
 
@@ -158,9 +161,9 @@ def assert_status(resp: Any, expected: int) -> str | None:
 # Layer 1: 服务启动验证
 # ---------------------------------------------------------------------------
 def layer1_startup() -> None:
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(" Layer 1: 服务启动验证")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # L1-01: 健康检查
     resp = http("GET", "/health")
@@ -183,8 +186,13 @@ def layer1_startup() -> None:
     if resp.status_code == 200:
         data = resp.json()
         ok = all(k in data for k in ("status", "version", "host", "port"))
-        log("L1", "L1-02", "健康检查字段完整性", "PASS" if ok else "FAIL",
-            "" if ok else f"字段缺失: {[k for k in ('status','version','host','port') if k not in data]}")
+        log(
+            "L1",
+            "L1-02",
+            "健康检查字段完整性",
+            "PASS" if ok else "FAIL",
+            "" if ok else f"字段缺失: {[k for k in ('status', 'version', 'host', 'port') if k not in data]}",
+        )
     else:
         log("L1", "L1-02", "健康检查字段完整性", "FAIL", f"status {resp.status_code}")
 
@@ -195,8 +203,13 @@ def layer1_startup() -> None:
         actual_port = GATEWAY_URL.split(":")[-1].rstrip("/")
         reported_port = str(data.get("port", ""))
         ok = reported_port == actual_port
-        log("L1", "L1-03", "端口一致性验证", "PASS" if ok else "FAIL",
-            f"health 报告 port={reported_port}, 实际 URL 端口={actual_port}")
+        log(
+            "L1",
+            "L1-03",
+            "端口一致性验证",
+            "PASS" if ok else "FAIL",
+            f"health 报告 port={reported_port}, 实际 URL 端口={actual_port}",
+        )
     else:
         log("L1", "L1-03", "端口一致性验证", "FAIL", f"status {resp.status_code}")
 
@@ -210,9 +223,9 @@ def layer1_startup() -> None:
 # Layer 2: 管理 API 功能验证
 # ---------------------------------------------------------------------------
 def layer2_management() -> None:
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(" Layer 2: 管理 API 功能验证")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # --- Traces API ---
     # L2-01: 追踪统计（空库）
@@ -223,8 +236,7 @@ def layer2_management() -> None:
     else:
         data = resp.json()
         ok = "total_requests" in data and data.get("total_requests", -1) >= 0
-        log("L2", "L2-01", "追踪统计（空库）", "PASS" if ok else "FAIL",
-            f"total_requests={data.get('total_requests')}")
+        log("L2", "L2-01", "追踪统计（空库）", "PASS" if ok else "FAIL", f"total_requests={data.get('total_requests')}")
 
     # L2-02: 追踪列表（空库）
     resp = http("GET", "/api/traces")
@@ -234,8 +246,13 @@ def layer2_management() -> None:
     else:
         data = resp.json()
         ok = isinstance(data.get("traces"), list) and isinstance(data.get("count"), int)
-        log("L2", "L2-02", "追踪列表（空库）", "PASS" if ok else "FAIL",
-            f"traces={type(data.get('traces')).__name__}, count={data.get('count')}")
+        log(
+            "L2",
+            "L2-02",
+            "追踪列表（空库）",
+            "PASS" if ok else "FAIL",
+            f"traces={type(data.get('traces')).__name__}, count={data.get('count')}",
+        )
 
     # L2-03: 追踪详情（不存在）
     resp = http("GET", "/api/traces/fake-id-12345")
@@ -256,8 +273,7 @@ def layer2_management() -> None:
         data = resp.json()
         traces = data.get("traces", [])
         ok = len(traces) <= 10
-        log("L2", "L2-05", "追踪列表分页", "PASS" if ok else "FAIL",
-            f"返回 {len(traces)} 条 (limit=10)")
+        log("L2", "L2-05", "追踪列表分页", "PASS" if ok else "FAIL", f"返回 {len(traces)} 条 (limit=10)")
 
     # --- Guardrails API ---
     # L2-06: 护栏统计
@@ -268,8 +284,13 @@ def layer2_management() -> None:
     else:
         data = resp.json()
         ok = isinstance(data.get("stats"), dict) and isinstance(data.get("total_hits"), int)
-        log("L2", "L2-06", "护栏统计", "PASS" if ok else "FAIL",
-            f"stats={type(data.get('stats')).__name__}, total_hits={data.get('total_hits')}")
+        log(
+            "L2",
+            "L2-06",
+            "护栏统计",
+            "PASS" if ok else "FAIL",
+            f"stats={type(data.get('stats')).__name__}, total_hits={data.get('total_hits')}",
+        )
 
     # L2-07: 护栏规则列表
     resp = http("GET", "/api/guardrails/rules")
@@ -280,8 +301,7 @@ def layer2_management() -> None:
         data = resp.json()
         rules = data.get("rules", [])
         ok = isinstance(rules, list)
-        log("L2", "L2-07", "护栏规则列表", "PASS" if ok else "FAIL",
-            f"rules count={len(rules)}")
+        log("L2", "L2-07", "护栏规则列表", "PASS" if ok else "FAIL", f"rules count={len(rules)}")
 
     # L2-08: 规则字段完整性
     resp = http("GET", "/api/guardrails/rules")
@@ -294,8 +314,13 @@ def layer2_management() -> None:
                 if f not in r:
                     missing.append(f"rule {r.get('id', '?')} missing '{f}'")
         ok = len(missing) == 0
-        log("L2", "L2-08", "规则字段完整性", "PASS" if ok else "FAIL",
-            "; ".join(missing) if missing else f"{len(rules)} 条规则字段完整")
+        log(
+            "L2",
+            "L2-08",
+            "规则字段完整性",
+            "PASS" if ok else "FAIL",
+            "; ".join(missing) if missing else f"{len(rules)} 条规则字段完整",
+        )
     else:
         log("L2", "L2-08", "规则字段完整性", "FAIL", f"status {resp.status_code}")
 
@@ -309,8 +334,13 @@ def layer2_management() -> None:
             if not isinstance(val, dict) or "total" not in val:
                 ok = False
                 break
-        log("L2", "L2-09", "统计 v2 结构", "PASS" if ok else "FAIL",
-            f"{len(stats)} 条规则统计" if ok else f"结构错误: {stats}")
+        log(
+            "L2",
+            "L2-09",
+            "统计 v2 结构",
+            "PASS" if ok else "FAIL",
+            f"{len(stats)} 条规则统计" if ok else f"结构错误: {stats}",
+        )
     else:
         log("L2", "L2-09", "统计 v2 结构", "FAIL", f"status {resp.status_code}")
 
@@ -323,19 +353,36 @@ def layer2_management() -> None:
     else:
         data = resp.json()
         ok = data.get("hourly_used") == 0 and data.get("budget_ok") is True
-        log("L2", "L2-10", "预算状态（默认 agent）", "PASS" if ok else "FAIL",
-            f"hourly_used={data.get('hourly_used')}, budget_ok={data.get('budget_ok')}")
+        log(
+            "L2",
+            "L2-10",
+            "预算状态（默认 agent）",
+            "PASS" if ok else "FAIL",
+            f"hourly_used={data.get('hourly_used')}, budget_ok={data.get('budget_ok')}",
+        )
 
     # L2-11: 预算状态字段完整性
     resp = http("GET", "/api/budget/status")
     if resp.status_code == 200:
         data = resp.json()
-        required = ("hourly_used", "hourly_limit", "hourly_ratio",
-                    "daily_used", "daily_limit", "daily_ratio", "budget_ok")
+        required = (
+            "hourly_used",
+            "hourly_limit",
+            "hourly_ratio",
+            "daily_used",
+            "daily_limit",
+            "daily_ratio",
+            "budget_ok",
+        )
         missing = [f for f in required if f not in data]
         ok = len(missing) == 0
-        log("L2", "L2-11", "预算状态字段完整性", "PASS" if ok else "FAIL",
-            f"缺少: {missing}" if missing else "所有字段存在")
+        log(
+            "L2",
+            "L2-11",
+            "预算状态字段完整性",
+            "PASS" if ok else "FAIL",
+            f"缺少: {missing}" if missing else "所有字段存在",
+        )
     else:
         log("L2", "L2-11", "预算状态字段完整性", "FAIL", f"status {resp.status_code}")
 
@@ -353,8 +400,7 @@ def layer2_management() -> None:
     else:
         data = resp.json()
         ok = isinstance(data.get("metrics"), list)
-        log("L2", "L2-13", "评估指标列表", "PASS" if ok else "FAIL",
-            f"metrics={type(data.get('metrics')).__name__}")
+        log("L2", "L2-13", "评估指标列表", "PASS" if ok else "FAIL", f"metrics={type(data.get('metrics')).__name__}")
 
     # L2-14: 指标非空
     resp = http("GET", "/api/eval/metrics")
@@ -362,8 +408,7 @@ def layer2_management() -> None:
         data = resp.json()
         metrics = data.get("metrics", [])
         ok = len(metrics) > 0
-        log("L2", "L2-14", "指标非空", "PASS" if ok else "FAIL",
-            f"{len(metrics)} 个指标" if ok else "metrics 为空")
+        log("L2", "L2-14", "指标非空", "PASS" if ok else "FAIL", f"{len(metrics)} 个指标" if ok else "metrics 为空")
     else:
         log("L2", "L2-14", "指标非空", "FAIL", f"status {resp.status_code}")
 
@@ -372,12 +417,18 @@ def layer2_management() -> None:
 # Layer 3: 正常代理路径 + Trace 记录验证
 # ---------------------------------------------------------------------------
 def layer3_normal_proxy() -> None:
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(" Layer 3: 正常代理路径 + Trace 记录验证")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     if not PROXY_API_KEY:
-        log("L3", "L3-ALL", "全部代理测试", "SKIP", "未设置 API key（请在 .env 中设置 OPENAI_API_KEY 或 DEEPSEEK_API_KEY）")
+        log(
+            "L3",
+            "L3-ALL",
+            "全部代理测试",
+            "SKIP",
+            "未设置 API key（请在 .env 中设置 OPENAI_API_KEY 或 DEEPSEEK_API_KEY）",
+        )
         return
 
     headers = {
@@ -399,8 +450,13 @@ def layer3_normal_proxy() -> None:
     else:
         data = resp.json()
         ok = "choices" in data and len(data.get("choices", [])) > 0 and "usage" in data
-        log("L3", "L3-01", "非流式聊天补全", "PASS" if ok else "FAIL",
-            f"choices={len(data.get('choices',[]))}, usage={'usage' in data}")
+        log(
+            "L3",
+            "L3-01",
+            "非流式聊天补全",
+            "PASS" if ok else "FAIL",
+            f"choices={len(data.get('choices', []))}, usage={'usage' in data}",
+        )
 
     # L3-02: 流式聊天补全
     body = {
@@ -416,12 +472,16 @@ def layer3_normal_proxy() -> None:
     else:
         ct = resp.headers.get("content-type", "")
         ok = "text/event-stream" in ct or "event-stream" in ct
-        log("L3", "L3-02", "流式聊天补全", "PASS" if ok else "FAIL",
-            f"Content-Type={ct}")
+        log("L3", "L3-02", "流式聊天补全", "PASS" if ok else "FAIL", f"Content-Type={ct}")
 
     # L3-03: 请求头透传（间接验证：如果返回 200 说明 key 被替换成功）
-    log("L3", "L3-03", "请求头透传", "PASS" if resp.status_code == 200 else "FAIL",
-        "Authorization 被替换为真实 API key" if resp.status_code == 200 else f"status {resp.status_code}")
+    log(
+        "L3",
+        "L3-03",
+        "请求头透传",
+        "PASS" if resp.status_code == 200 else "FAIL",
+        "Authorization 被替换为真实 API key" if resp.status_code == 200 else f"status {resp.status_code}",
+    )
 
     # L3-04: 多轮对话
     body = {
@@ -446,8 +506,7 @@ def layer3_normal_proxy() -> None:
         data = resp.json()
         traces = data.get("traces", [])
         ok = len(traces) > 0
-        log("L3", "L3-05", "非流式请求产生 trace", "PASS" if ok else "FAIL",
-            f"trace count={len(traces)}")
+        log("L3", "L3-05", "非流式请求产生 trace", "PASS" if ok else "FAIL", f"trace count={len(traces)}")
     else:
         log("L3", "L3-05", "非流式请求产生 trace", "FAIL", f"status {resp.status_code}")
 
@@ -461,8 +520,13 @@ def layer3_normal_proxy() -> None:
             required = ("trace_id", "status", "total_tokens", "created_at")
             missing = [f for f in required if f not in t]
             ok = len(missing) == 0
-            log("L3", "L3-06", "trace 字段完整性", "PASS" if ok else "FAIL",
-                f"缺少: {missing}" if missing else "字段完整")
+            log(
+                "L3",
+                "L3-06",
+                "trace 字段完整性",
+                "PASS" if ok else "FAIL",
+                f"缺少: {missing}" if missing else "字段完整",
+            )
         else:
             log("L3", "L3-06", "trace 字段完整性", "FAIL", "无 trace 记录")
     else:
@@ -480,8 +544,7 @@ def layer3_normal_proxy() -> None:
                 detail = resp2.json()
                 span_tree = detail.get("span_tree")
                 ok = span_tree is not None
-                log("L3", "L3-07", "span 树结构", "PASS" if ok else "FAIL",
-                    f"span_tree={'存在' if ok else '缺失'}")
+                log("L3", "L3-07", "span 树结构", "PASS" if ok else "FAIL", f"span_tree={'存在' if ok else '缺失'}")
             else:
                 log("L3", "L3-07", "span 树结构", "FAIL", f"detail status {resp2.status_code}")
         else:
@@ -495,8 +558,7 @@ def layer3_normal_proxy() -> None:
         data = resp.json()
         count = data.get("count", 0)
         ok = count >= 2  # 至少非流式 + 流式各一个
-        log("L3", "L3-08", "流式请求产生 trace", "PASS" if ok else "FAIL",
-            f"trace count={count}")
+        log("L3", "L3-08", "流式请求产生 trace", "PASS" if ok else "FAIL", f"trace count={count}")
     else:
         log("L3", "L3-08", "流式请求产生 trace", "FAIL", f"status {resp.status_code}")
 
@@ -506,8 +568,7 @@ def layer3_normal_proxy() -> None:
         data = resp.json()
         total = data.get("total_requests", 0)
         ok = total >= 2
-        log("L3", "L3-09", "trace 统计更新", "PASS" if ok else "FAIL",
-            f"total_requests={total}")
+        log("L3", "L3-09", "trace 统计更新", "PASS" if ok else "FAIL", f"total_requests={total}")
     else:
         log("L3", "L3-09", "trace 统计更新", "FAIL", f"status {resp.status_code}")
 
@@ -525,8 +586,7 @@ def layer3_normal_proxy() -> None:
                 # guard_hits 可能为空列表或不存在
                 hits = span_tree.get("guard_hits", []) if isinstance(span_tree, dict) else []
                 ok = len(hits) == 0
-                log("L3", "L3-10", "正常请求不触发 guard", "PASS" if ok else "FAIL",
-                    f"guard_hits={hits}")
+                log("L3", "L3-10", "正常请求不触发 guard", "PASS" if ok else "FAIL", f"guard_hits={hits}")
             else:
                 log("L3", "L3-10", "正常请求不触发 guard", "FAIL", f"detail status {resp2.status_code}")
         else:
@@ -542,8 +602,7 @@ def layer3_normal_proxy() -> None:
         if traces:
             status = traces[0].get("status", "?")
             ok = status == "ok"
-            log("L3", "L3-11", "正常请求状态为 ok", "PASS" if ok else "FAIL",
-                f"status={status}")
+            log("L3", "L3-11", "正常请求状态为 ok", "PASS" if ok else "FAIL", f"status={status}")
         else:
             log("L3", "L3-11", "正常请求状态为 ok", "FAIL", "无 trace")
     else:
@@ -554,9 +613,9 @@ def layer3_normal_proxy() -> None:
 # Layer 4: 错误处理路径
 # ---------------------------------------------------------------------------
 def layer4_error_handling() -> None:
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(" Layer 4: 错误处理路径")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     headers = {
         "Content-Type": "application/json",
@@ -597,8 +656,13 @@ def layer4_error_handling() -> None:
                                 break
                         if pii_found:
                             break
-            log("L4", "L4-01", "PII 检测 → REDACT", "PASS" if pii_found else "FAIL",
-                f"trace 中 {'找到' if pii_found else '未找到'} pii-detection guard hit")
+            log(
+                "L4",
+                "L4-01",
+                "PII 检测 → REDACT",
+                "PASS" if pii_found else "FAIL",
+                f"trace 中 {'找到' if pii_found else '未找到'} pii-detection guard hit",
+            )
         else:
             log("L4", "L4-01", "PII 检测 → REDACT", "FAIL", f"无法获取 traces: {traces_resp.status_code}")
     else:
@@ -618,8 +682,7 @@ def layer4_error_handling() -> None:
     else:
         data = resp.json()
         ok = "blocked_by" in data and "injection" in str(data.get("blocked_by", "")).lower()
-        log("L4", "L4-02", "注入检测 → BLOCK", "PASS" if ok else "FAIL",
-            f"blocked_by={data.get('blocked_by')}")
+        log("L4", "L4-02", "注入检测 → BLOCK", "PASS" if ok else "FAIL", f"blocked_by={data.get('blocked_by')}")
 
     # L4-03: 内容安全 → BLOCK
     body = {
@@ -635,8 +698,7 @@ def layer4_error_handling() -> None:
     else:
         data = resp.json()
         ok = "blocked_by" in data
-        log("L4", "L4-03", "内容安全 → BLOCK", "PASS" if ok else "FAIL",
-            f"blocked_by={data.get('blocked_by')}")
+        log("L4", "L4-03", "内容安全 → BLOCK", "PASS" if ok else "FAIL", f"blocked_by={data.get('blocked_by')}")
 
     # L4-04: 自定义规则 → BLOCK（当前无自定义规则，SKIP）
     log("L4", "L4-04", "自定义规则 → BLOCK", "SKIP", "当前配置无自定义规则")
@@ -646,26 +708,22 @@ def layer4_error_handling() -> None:
     resp = http("POST", "/v1/chat/completions", json={}, headers=headers)
     # 空体可能返回 400 或透传上游错误
     ok = resp.status_code in (200, 400, 422, 500)
-    log("L4", "L4-08", "空请求体", "PASS" if ok else "FAIL",
-        f"status={resp.status_code}")
+    log("L4", "L4-08", "空请求体", "PASS" if ok else "FAIL", f"status={resp.status_code}")
 
     # L4-09: 缺少 messages
     resp = http("POST", "/v1/chat/completions", json={"model": "gpt-4o"}, headers=headers)
     ok = resp.status_code in (200, 400, 422, 500)
-    log("L4", "L4-09", "缺少 messages", "PASS" if ok else "FAIL",
-        f"status={resp.status_code}")
+    log("L4", "L4-09", "缺少 messages", "PASS" if ok else "FAIL", f"status={resp.status_code}")
 
     # L4-10: 无效 JSON
     resp = http("POST", "/v1/chat/completions", content="not json", headers=headers)
     ok = resp.status_code in (400, 422)
-    log("L4", "L4-10", "无效 JSON", "PASS" if ok else "FAIL",
-        f"status={resp.status_code}")
+    log("L4", "L4-10", "无效 JSON", "PASS" if ok else "FAIL", f"status={resp.status_code}")
 
     # L4-11: 未知路径
     resp = http("POST", "/v1/unknown/path", json={"test": 1}, headers=headers)
     ok = resp.status_code == 404
-    log("L4", "L4-11", "未知路径", "PASS" if ok else "FAIL",
-        f"status={resp.status_code}")
+    log("L4", "L4-11", "未知路径", "PASS" if ok else "FAIL", f"status={resp.status_code}")
 
     # --- 上游错误（需要控制上游，较难自动测试，SKIP）---
     log("L4", "L4-05", "上游超时", "SKIP", "需手动设置极小 timeout 或断网")
@@ -685,8 +743,13 @@ def layer4_error_handling() -> None:
         traces = data.get("traces", [])
         blocked_traces = [t for t in traces if t.get("status") == "blocked"]
         ok = len(blocked_traces) >= 1
-        log("L4", "L4-15", "被 block 请求产生 trace", "PASS" if ok else "FAIL",
-            f"blocked trace count={len(blocked_traces)}")
+        log(
+            "L4",
+            "L4-15",
+            "被 block 请求产生 trace",
+            "PASS" if ok else "FAIL",
+            f"blocked trace count={len(blocked_traces)}",
+        )
     else:
         log("L4", "L4-15", "被 block 请求产生 trace", "FAIL", f"status {resp.status_code}")
 
@@ -695,12 +758,18 @@ def layer4_error_handling() -> None:
 # Layer 5: 端到端链路验证
 # ---------------------------------------------------------------------------
 def layer5_end_to_end() -> None:
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(" Layer 5: 端到端链路验证")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     if not PROXY_API_KEY:
-        log("L5", "L5-ALL", "全部端到端测试", "SKIP", "未设置 API key（请在 .env 中设置 OPENAI_API_KEY 或 DEEPSEEK_API_KEY）")
+        log(
+            "L5",
+            "L5-ALL",
+            "全部端到端测试",
+            "SKIP",
+            "未设置 API key（请在 .env 中设置 OPENAI_API_KEY 或 DEEPSEEK_API_KEY）",
+        )
         return
 
     headers = {
@@ -747,8 +816,7 @@ def layer5_end_to_end() -> None:
         data = resp.json()
         total = data.get("total_requests", 0)
         ok = total >= 4
-        log("L5", "L5-01", "混合请求序列", "PASS" if ok else "FAIL",
-            f"total_requests={total} (expected >=4)")
+        log("L5", "L5-01", "混合请求序列", "PASS" if ok else "FAIL", f"total_requests={total} (expected >=4)")
     else:
         log("L5", "L5-01", "混合请求序列", "FAIL", f"stats status {resp.status_code}")
 
@@ -764,13 +832,13 @@ def layer5_end_to_end() -> None:
         has_ok = statuses.get("ok", 0) >= 1
         has_blocked = statuses.get("blocked", 0) >= 1
         ok = has_ok and has_blocked
-        log("L5", "L5-01b", "混合请求状态分布", "PASS" if ok else "FAIL",
-            f"statuses={statuses}")
+        log("L5", "L5-01b", "混合请求状态分布", "PASS" if ok else "FAIL", f"statuses={statuses}")
     else:
         log("L5", "L5-01b", "混合请求状态分布", "FAIL", f"status {resp.status_code}")
 
     # L5-02: 并发请求（简化版：快速发送 3 个）
     import concurrent.futures
+
     def send_request(i: int) -> int:
         r = http("POST", "/v1/chat/completions", json=body1, headers=headers, timeout=30)
         return r.status_code
@@ -780,8 +848,7 @@ def layer5_end_to_end() -> None:
         codes = [f.result() for f in futures]
 
     all_ok = all(c == 200 for c in codes)
-    log("L5", "L5-02", "并发请求", "PASS" if all_ok else "FAIL",
-        f"status codes={codes}")
+    log("L5", "L5-02", "并发请求", "PASS" if all_ok else "FAIL", f"status codes={codes}")
 
     time.sleep(1.0)
 
@@ -791,16 +858,14 @@ def layer5_end_to_end() -> None:
         data = resp.json()
         count = data.get("count", 0)
         ok = count >= 7  # 之前 4 个 + 并发 3 个
-        log("L5", "L5-02b", "并发请求 trace 记录", "PASS" if ok else "FAIL",
-            f"trace count={count} (expected >=7)")
+        log("L5", "L5-02b", "并发请求 trace 记录", "PASS" if ok else "FAIL", f"trace count={count} (expected >=7)")
     else:
         log("L5", "L5-02b", "并发请求 trace 记录", "FAIL", f"status {resp.status_code}")
 
     # L5-03: 长时间运行（简化：检查服务仍健康）
     resp = http("GET", "/health")
     ok = resp.status_code == 200
-    log("L5", "L5-03", "服务持续健康", "PASS" if ok else "FAIL",
-        f"health status={resp.status_code}")
+    log("L5", "L5-03", "服务持续健康", "PASS" if ok else "FAIL", f"health status={resp.status_code}")
 
     # L5-04~L5-07: Dashboard 数据一致性（通过 API 验证）
     # 验证 guardrails stats 与 traces 一致
@@ -813,20 +878,30 @@ def layer5_end_to_end() -> None:
         blocked_count = tr_data.get("blocked_count", 0)
         # 两者应该有关联（不一定完全相等，但都应 >0 如果有 blocked 请求）
         ok = True  # 只要 API 返回就认为是数据一致的入口
-        log("L5", "L5-04", "Dashboard 数据一致性", "PASS",
-            f"guardrail_hits={total_hits}, blocked_traces={blocked_count}")
+        log(
+            "L5",
+            "L5-04",
+            "Dashboard 数据一致性",
+            "PASS",
+            f"guardrail_hits={total_hits}, blocked_traces={blocked_count}",
+        )
     else:
-        log("L5", "L5-04", "Dashboard 数据一致性", "FAIL",
-            f"gr_status={resp_gr.status_code}, tr_status={resp_tr.status_code}")
+        log(
+            "L5",
+            "L5-04",
+            "Dashboard 数据一致性",
+            "FAIL",
+            f"gr_status={resp_gr.status_code}, tr_status={resp_tr.status_code}",
+        )
 
 
 # ---------------------------------------------------------------------------
 # 报告生成
 # ---------------------------------------------------------------------------
 def generate_report() -> None:
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(" 测试报告")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     total = len(results)
     passed = sum(1 for r in results if r.status == "PASS")
@@ -850,9 +925,9 @@ def generate_report() -> None:
                 print(f"  - {r.layer} {r.case_id}: {r.name} → {r.detail}")
 
     # 按层级汇总
-    print(f"\n{'-'*40}")
+    print(f"\n{'-' * 40}")
     print(" 按层级汇总")
-    print(f"{'-'*40}")
+    print(f"{'-' * 40}")
     layers = {}
     for r in results:
         layers.setdefault(r.layer, {"total": 0, "pass": 0, "fail": 0, "skip": 0})
@@ -866,14 +941,16 @@ def generate_report() -> None:
 
     for layer, stats in sorted(layers.items()):
         rate = stats["pass"] / stats["total"] * 100 if stats["total"] > 0 else 0
-        print(f"  {layer}: {stats['pass']}/{stats['total']} PASS ({rate:.0f}%)  [FAIL:{stats['fail']} SKIP:{stats['skip']}]")
+        print(
+            f"  {layer}: {stats['pass']}/{stats['total']} PASS ({rate:.0f}%)  [FAIL:{stats['fail']} SKIP:{stats['skip']}]"
+        )
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     if failed == 0:
         print(f" {PASS} 所有测试通过！")
     else:
         print(f" {FAIL} 存在 {failed} 个失败用例，请检查上方详情")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # 保存报告到文件
     report_path = Path("tests/api_test_report.txt")
@@ -906,9 +983,9 @@ def generate_report() -> None:
 # 主入口
 # ---------------------------------------------------------------------------
 def main() -> int:
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(" Gateway API 端到端测试")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f" Gateway URL: {GATEWAY_URL}")
     print(f" API_KEY: {'已设置' if PROXY_API_KEY else '未设置 (Layer 3/5 将跳过)'}")
 

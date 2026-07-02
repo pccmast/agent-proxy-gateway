@@ -6,7 +6,8 @@ v2 — upgraded with semantic_classifier + indirect_injection support.
 import re
 from typing import TYPE_CHECKING
 
-from shared.models import GuardResult, GuardAction
+from shared.models import GuardAction, GuardResult
+
 from .base import BaseGuardRule
 
 if TYPE_CHECKING:
@@ -62,9 +63,7 @@ class InjectionDetectionRule(BaseGuardRule):
             all_patterns = raw_patterns + [p for p in config_patterns if isinstance(p, str)]
         else:
             all_patterns = raw_patterns
-        self._patterns: list[re.Pattern[str]] = [
-            re.compile(p, re.IGNORECASE) for p in all_patterns
-        ]
+        self._patterns: list[re.Pattern[str]] = [re.compile(p, re.IGNORECASE) for p in all_patterns]
 
     async def check_input(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, phase="input")

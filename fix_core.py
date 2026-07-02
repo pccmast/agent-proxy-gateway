@@ -1,8 +1,7 @@
 """Fix proxy/core.py — remove build_request and use inline stream() call."""
-import re
 
 path = "src/gateway/proxy/core.py"
-content = open(path, "r", encoding="utf-8").read()
+content = open(path, encoding="utf-8").read()
 
 # Pattern: build_request + stream(request)
 old = """        upstream_req = client.build_request("POST", url, json=body, headers=headers)
@@ -22,5 +21,5 @@ else:
     lines = content.split("\n")
     for i, line in enumerate(lines):
         if "build_request" in line or "upstream_req" in line:
-            print(f"L{i+1}: {line}")
+            print(f"L{i + 1}: {line}")
     print("Pattern not found in file")

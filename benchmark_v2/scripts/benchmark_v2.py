@@ -27,8 +27,8 @@ from typing import Any
 import httpx
 import yaml
 
-
 # --------------------------------------------------------------------------- config
+
 
 @dataclass
 class BackendConfig:
@@ -69,6 +69,7 @@ class BenchmarkConfig:
 
 # --------------------------------------------------------------------------- metrics
 
+
 @dataclass
 class RequestMetrics:
     experiment: str
@@ -104,7 +105,7 @@ def _ms(dt: float) -> float:
 
 
 def _load_config(path: Path) -> BenchmarkConfig:
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         raw = yaml.safe_load(fh)
     backend_raw = dict(raw["backend"])
     # Rename 'type' to 'backend_type' to avoid keyword conflict
@@ -274,7 +275,12 @@ async def _run_experiment(
         async with httpx.AsyncClient() as client:
             if exp.streaming:
                 m = await _request_streaming(
-                    client, url, headers, payload, exp.name, idx,
+                    client,
+                    url,
+                    headers,
+                    payload,
+                    exp.name,
+                    idx,
                     max_chunk_records=cfg.observability.get("max_chunk_intervals", 20),
                 )
             else:
@@ -282,6 +288,7 @@ async def _run_experiment(
             results.append(m)
 
     semaphore = asyncio.Semaphore(exp.concurrency)
+
     async def _bounded(idx: int) -> None:
         async with semaphore:
             await _worker(idx)
@@ -309,11 +316,17 @@ async def _run_stair_step(
         print(f"\n  [Stair] Step {concurrency} concurrency, {requests} requests, ~{duration}s ...")
 
         step_results: list[RequestMetrics] = []
+
         async def _worker(idx: int) -> None:
             async with httpx.AsyncClient() as client:
                 if stair.streaming:
                     m = await _request_streaming(
-                        client, url, headers, payload, exp_name, idx,
+                        client,
+                        url,
+                        headers,
+                        payload,
+                        exp_name,
+                        idx,
                         max_chunk_records=cfg.observability.get("max_chunk_intervals", 20),
                     )
                 else:
@@ -321,6 +334,7 @@ async def _run_stair_step(
                 step_results.append(m)
 
         semaphore = asyncio.Semaphore(concurrency)
+
         async def _bounded(idx: int) -> None:
             async with semaphore:
                 await _worker(idx)
@@ -334,7 +348,9 @@ async def _run_stair_step(
         errors = [r for r in step_results if r.error]
         if latencies:
             stats = _stats(latencies)
-            print(f"    -> P50={stats['p50']:.0f}ms, P95={stats['p95']:.0f}ms, QPS={len(latencies)/max(stats['avg'],1)*1000:.1f}, Errors={len(errors)}")
+            print(
+                f"    -> P50={stats['p50']:.0f}ms, P95={stats['p95']:.0f}ms, QPS={len(latencies) / max(stats['avg'], 1) * 1000:.1f}, Errors={len(errors)}"
+            )
         else:
             print(f"    -> All errors: {len(errors)}/{len(step_results)}")
 
@@ -438,10 +454,16 @@ async def main() -> None:
     if run_all or args.experiment == "e1":
         e1 = experiments.get("e1_baseline", {})
         if e1:
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print("E1: Baseline (1 concurrent, 5 requests)")
-            print(f"{'='*60}")
-            exp = ExperimentConfig(name="e1_baseline", concurrency=e1["concurrency"], requests=e1["requests"], streaming=e1["streaming"], prompt=e1["prompt"])
+            print(f"{'=' * 60}")
+            exp = ExperimentConfig(
+                name="e1_baseline",
+                concurrency=e1["concurrency"],
+                requests=e1["requests"],
+                streaming=e1["streaming"],
+                prompt=e1["prompt"],
+            )
             results: list[RequestMetrics] = []
             await _run_experiment(cfg, exp, results)
             all_results.extend(results)
@@ -451,10 +473,16 @@ async def main() -> None:
     if run_all or args.experiment == "e2":
         e2 = experiments.get("e2_light_concurrency", {})
         if e2:
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print("E2: Light Concurrency (3 concurrent, 10 requests)")
-            print(f"{'='*60}")
-            exp = ExperimentConfig(name="e2_light", concurrency=e2["concurrency"], requests=e2["requests"], streaming=e2["streaming"], prompt=e2["prompt"])
+            print(f"{'=' * 60}")
+            exp = ExperimentConfig(
+                name="e2_light",
+                concurrency=e2["concurrency"],
+                requests=e2["requests"],
+                streaming=e2["streaming"],
+                prompt=e2["prompt"],
+            )
             results = []
             await _run_experiment(cfg, exp, results)
             all_results.extend(results)
@@ -464,10 +492,12 @@ async def main() -> None:
     if run_all or args.experiment == "e3":
         e3 = experiments.get("e3_stair_step", {})
         if e3:
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print("E3: Stair Step Load (5 -> 10 -> 20 concurrent)")
-            print(f"{'='*60}")
-            stair = StairConfig(steps=e3["steps"], step_interval=e3["step_interval"], streaming=e3["streaming"], prompt=e3["prompt"])
+            print(f"{'=' * 60}")
+            stair = StairConfig(
+                steps=e3["steps"], step_interval=e3["step_interval"], streaming=e3["streaming"], prompt=e3["prompt"]
+            )
             results = []
             await _run_stair_step(cfg, stair, results)
             all_results.extend(results)
@@ -477,10 +507,16 @@ async def main() -> None:
     if run_all or args.experiment == "e4":
         e4 = experiments.get("e4_streaming_baseline", {})
         if e4:
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print("E4: Streaming Baseline (1 concurrent, 5 requests)")
-            print(f"{'='*60}")
-            exp = ExperimentConfig(name="e4_streaming", concurrency=e4["concurrency"], requests=e4["requests"], streaming=e4["streaming"], prompt=e4["prompt"])
+            print(f"{'=' * 60}")
+            exp = ExperimentConfig(
+                name="e4_streaming",
+                concurrency=e4["concurrency"],
+                requests=e4["requests"],
+                streaming=e4["streaming"],
+                prompt=e4["prompt"],
+            )
             results = []
             await _run_experiment(cfg, exp, results)
             all_results.extend(results)
@@ -490,10 +526,16 @@ async def main() -> None:
     if run_all or args.experiment == "e5":
         e5 = experiments.get("e5_streaming_concurrency", {})
         if e5:
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print("E5: Streaming Concurrency (3 concurrent, 6 requests)")
-            print(f"{'='*60}")
-            exp = ExperimentConfig(name="e5_streaming_con", concurrency=e5["concurrency"], requests=e5["requests"], streaming=e5["streaming"], prompt=e5["prompt"])
+            print(f"{'=' * 60}")
+            exp = ExperimentConfig(
+                name="e5_streaming_con",
+                concurrency=e5["concurrency"],
+                requests=e5["requests"],
+                streaming=e5["streaming"],
+                prompt=e5["prompt"],
+            )
             results = []
             await _run_experiment(cfg, exp, results)
             all_results.extend(results)
@@ -501,12 +543,12 @@ async def main() -> None:
 
     # Save
     out_path = _save_results(all_results, output_dir)
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"All results saved to: {out_path}")
     print(f"Total requests: {len(all_results)}")
     print(f"Success: {len([r for r in all_results if not r.error])}")
     print(f"Errors:  {len([r for r in all_results if r.error])}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

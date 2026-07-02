@@ -8,18 +8,18 @@ LLM-as-judge evals are queued asynchronously (non-blocking).
 from typing import Any, cast
 
 from gateway.proxy.middleware import Middleware
+from shared.logging import get_logger
 from shared.models import (
     EvalResult,
-    EvalMetrics,
     RequestContext,
     ResponseContext,
 )
-from shared.logging import get_logger
+
 from .heuristic import (
     HeuristicEvaluator,
-    ResponseLengthEval,
-    RepetitionEval,
     LatencyEval,
+    RepetitionEval,
+    ResponseLengthEval,
     ToolCallEval,
 )
 
@@ -103,13 +103,13 @@ class EvalPipeline(Middleware):
             try:
                 import asyncio
                 from typing import cast
+
                 # Imported lazily here to avoid a hard dependency on
                 # llm_judge module when it's not configured
                 from gateway.eval.llm_judge import LLMJudgeEvaluator
+
                 judge = cast(LLMJudgeEvaluator, self._llm_judge)
-                asyncio.create_task(
-                    judge.evaluate(ctx.request, ctx.response, ctx.trace_id)
-                )
+                asyncio.create_task(judge.evaluate(ctx.request, ctx.response, ctx.trace_id))
             except Exception as e:
                 logger.debug("llm_judge_queue_error", error=str(e))
 

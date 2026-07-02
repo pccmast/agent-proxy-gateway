@@ -1,20 +1,26 @@
 """Tests for budget / rate limiter / circuit breaker."""
 
 import time
+
 import pytest
 
-from gateway.budget.rate_limiter import SlidingWindowRateLimiter, RateLimitConfig
-from gateway.budget.token_counter import TokenCounter
 from gateway.budget.circuit_breaker import CircuitBreaker, CircuitState
-from gateway.proxy.middleware import BlockException, RateLimitException
+from gateway.budget.rate_limiter import SlidingWindowRateLimiter
+from gateway.budget.token_counter import TokenCounter
+from gateway.proxy.middleware import RateLimitException
 from shared.models import (
-    RequestContext, ResponseContext, NormalizedRequest, NormalizedResponse, Message, TokenUsage,
+    Message,
+    NormalizedRequest,
+    NormalizedResponse,
+    RequestContext,
+    ResponseContext,
+    TokenUsage,
 )
-
 
 # ==========================================================================
 # Rate Limiter
 # ==========================================================================
+
 
 class TestSlidingWindowRateLimiter:
     @pytest.fixture
@@ -24,7 +30,8 @@ class TestSlidingWindowRateLimiter:
     @pytest.mark.asyncio
     async def test_under_limit(self, limiter):
         ctx = RequestContext(
-            trace_id="t", span_id="s",
+            trace_id="t",
+            span_id="s",
             request=NormalizedRequest(provider="openai", model="gpt-4o", messages=[Message(role="user", content="hi")]),
         )
         result = await limiter.on_request(ctx)
@@ -34,7 +41,8 @@ class TestSlidingWindowRateLimiter:
     async def test_exceeded_rpm(self, limiter):
         """Send 6 requests when limit is 5 → 6th should be blocked."""
         ctx = RequestContext(
-            trace_id="t", span_id="s",
+            trace_id="t",
+            span_id="s",
             request=NormalizedRequest(provider="openai", model="gpt-4o", messages=[Message(role="user", content="hi")]),
             headers={"X-Agent-ID": "test-agent"},
         )
@@ -48,10 +56,13 @@ class TestSlidingWindowRateLimiter:
     @pytest.mark.asyncio
     async def test_response_records_tokens(self, limiter):
         ctx = ResponseContext(
-            trace_id="t", span_id="s",
+            trace_id="t",
+            span_id="s",
             request=NormalizedRequest(provider="openai", model="gpt-4o", messages=[]),
             response=NormalizedResponse(
-                provider="openai", model="gpt-4o", content="ok",
+                provider="openai",
+                model="gpt-4o",
+                content="ok",
                 usage=TokenUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
             ),
         )
@@ -67,6 +78,7 @@ class TestSlidingWindowRateLimiter:
 # Token Counter
 # ==========================================================================
 
+
 class TestTokenCounter:
     @pytest.fixture
     def counter(self):
@@ -74,7 +86,8 @@ class TestTokenCounter:
 
     def test_estimate_tokens(self, counter):
         req = NormalizedRequest(
-            provider="openai", model="gpt-4o",
+            provider="openai",
+            model="gpt-4o",
             messages=[Message(role="user", content="Hello, how are you?")],
         )
         tokens = counter.estimate_prompt_tokens(req)
@@ -113,6 +126,7 @@ class TestTokenCounter:
 # ==========================================================================
 # Circuit Breaker
 # ==========================================================================
+
 
 class TestCircuitBreaker:
     @pytest.fixture

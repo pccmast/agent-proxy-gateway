@@ -10,11 +10,11 @@ The server listens on 127.0.0.1:18081 and mimics OpenAI-compatible endpoints:
     POST /v1/chat/completions  → JSON or SSE response
 """
 
-import json
-import time
-import random
 import argparse
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
+import random
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 class MockLLMHandler(BaseHTTPRequestHandler):

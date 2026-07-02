@@ -14,9 +14,10 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from shared.logging import get_logger
+
 from .config import SessionState
 
 logger = get_logger()
@@ -84,7 +85,7 @@ class SQLiteSessionStore:
                 self._save(state)
                 self._maybe_evict_lru()
             else:
-                state.last_activity = datetime.now(timezone.utc)
+                state.last_activity = datetime.now(UTC)
                 self._save(state)
             return state
 
@@ -103,7 +104,7 @@ class SQLiteSessionStore:
 
     def evict_expired(self) -> int:
         """Delete all sessions older than TTL."""
-        cutoff = datetime.now(timezone.utc) - timedelta(seconds=self._ttl_seconds)
+        cutoff = datetime.now(UTC) - timedelta(seconds=self._ttl_seconds)
         with self._lock:
             cursor = self._conn.execute(
                 "DELETE FROM guard_sessions WHERE updated_at < ?",
@@ -116,9 +117,7 @@ class SQLiteSessionStore:
     def active_count(self) -> int:
         """Current active session count."""
         try:
-            row = self._conn.execute(
-                "SELECT COUNT(*) FROM guard_sessions"
-            ).fetchone()
+            row = self._conn.execute("SELECT COUNT(*) FROM guard_sessions").fetchone()
             return int(row[0]) if row else 0
         except Exception:
             return 0
@@ -129,8 +128,7 @@ class SQLiteSessionStore:
         """Load a session from SQLite."""
         try:
             row = self._conn.execute(
-                "SELECT state_json, updated_at FROM guard_sessions "
-                "WHERE session_id = ?",
+                "SELECT state_json, updated_at FROM guard_sessions WHERE session_id = ?",
                 (session_id,),
             ).fetchone()
             if not row:
@@ -146,12 +144,12 @@ class SQLiteSessionStore:
                 tool_call_history=data.get("tool_call_history", []),
                 consecutive_same_tool=int(data.get("consecutive_same_tool", 0)),
                 total_tool_calls=int(data.get("total_tool_calls", 0)),
-                last_activity=datetime.fromisoformat(
-                    data.get("last_activity", updated_at or "")
-                ) if data.get("last_activity") else datetime.now(timezone.utc),
-                created_at=datetime.fromisoformat(
-                    data.get("created_at", updated_at or "")
-                ) if data.get("created_at") else datetime.now(timezone.utc),
+                last_activity=datetime.fromisoformat(data.get("last_activity", updated_at or ""))
+                if data.get("last_activity")
+                else datetime.now(UTC),
+                created_at=datetime.fromisoformat(data.get("created_at", updated_at or ""))
+                if data.get("created_at")
+                else datetime.now(UTC),
             )
         except Exception:
             return None
@@ -168,20 +166,17 @@ class SQLiteSessionStore:
             "last_activity": state.last_activity.isoformat(),
         }
         state_json = json.dumps(data, ensure_ascii=False)
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         self._conn.execute(
-            "INSERT OR REPLACE INTO guard_sessions "
-            "(session_id, state_json, updated_at) VALUES (?, ?, ?)",
+            "INSERT OR REPLACE INTO guard_sessions (session_id, state_json, updated_at) VALUES (?, ?, ?)",
             (state.session_id, state_json, now),
         )
         self._conn.commit()
 
     def _maybe_evict_lru(self) -> None:
         """Evict oldest sessions if over max_sessions."""
-        row = self._conn.execute(
-            "SELECT COUNT(*) FROM guard_sessions"
-        ).fetchone()
+        row = self._conn.execute("SELECT COUNT(*) FROM guard_sessions").fetchone()
         if not row or int(row[0]) <= self._max_sessions:
             return
 

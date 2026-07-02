@@ -1,7 +1,8 @@
 """Unit tests for OpenAI protocol adapter."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from gateway.adapter.openai import OpenAIAdapter
 
@@ -84,9 +85,7 @@ class TestOpenAIAdapter:
 
     def test_extract_stream_chunk_content(self, adapter):
         """Should extract delta content from SSE chunk."""
-        chunk = adapter.extract_stream_chunk(
-            '{"choices":[{"delta":{"content":"Hello"},"index":0}]}'
-        )
+        chunk = adapter.extract_stream_chunk('{"choices":[{"delta":{"content":"Hello"},"index":0}]}')
         assert chunk is not None
         assert chunk.delta_content == "Hello"
         assert chunk.is_done is False

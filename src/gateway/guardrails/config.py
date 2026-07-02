@@ -6,21 +6,21 @@ SessionState, AuditEvent, SafetyPlatformConfig 等模型。
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
-
 
 # ============================================================================
 # 枚举
 # ============================================================================
 
-class RulePhase(str, Enum):
+
+class RulePhase(StrEnum):
     INPUT = "input"
     OUTPUT = "output"
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     CRITICAL = "critical"
     HIGH = "high"
     MEDIUM = "medium"
@@ -31,12 +31,14 @@ class Severity(str, Enum):
 # RuleScope
 # ============================================================================
 
+
 class RuleScope(BaseModel):
     """规则作用范围。
 
     Precondition: models 和 agents 为合法值。
     Postcondition: ScopeMatcher.matches() 可据此判断规则是否适用于当前请求。
     """
+
     models: list[str] = Field(default_factory=lambda: ["*"])
     agents: list[str] = Field(default_factory=lambda: ["*"])
 
@@ -45,12 +47,14 @@ class RuleScope(BaseModel):
 # BaseRuleConfig
 # ============================================================================
 
+
 class BaseRuleConfig(BaseModel):
     """所有规则配置的通用字段。
 
     Precondition: type 值在插件注册表中存在对应的规则实现。
     Postcondition: engine 根据此配置实例化对应规则。
     """
+
     id: str
     type: str
     phase: str = "input"
@@ -65,8 +69,10 @@ class BaseRuleConfig(BaseModel):
 # 具体规则的 config 子对象
 # ============================================================================
 
+
 class InjectionConfig(BaseModel):
     """注入检测配置"""
+
     pattern_matching: bool = True
     patterns: list[str] = Field(default_factory=list)
     semantic_classifier: bool = False
@@ -77,10 +83,9 @@ class InjectionConfig(BaseModel):
 
 class PIIConfig(BaseModel):
     """PII 检测配置"""
+
     structured_pii: bool = True
-    categories: list[str] = Field(
-        default_factory=lambda: ["email", "phone", "id_card", "bank_card"]
-    )
+    categories: list[str] = Field(default_factory=lambda: ["email", "phone", "id_card", "bank_card"])
     secrets_detection: bool = False
     secret_patterns: list[dict[str, str]] = Field(default_factory=list)
     custom_terms_file: str = ""
@@ -88,6 +93,7 @@ class PIIConfig(BaseModel):
 
 class SystemPromptConfig(BaseModel):
     """系统提示相关规则的配置"""
+
     patterns: list[str] = Field(default_factory=list)
     similarity_check: bool = False
     system_prompt_hash: str = ""
@@ -101,12 +107,14 @@ class SystemPromptConfig(BaseModel):
 
 class TopicConfig(BaseModel):
     """主题限制配置"""
+
     allowed_topics: list[str] = Field(default_factory=list)
     fallback_action: str = "log"
 
 
 class AgencyConfig(BaseModel):
     """过度代理配置"""
+
     allowed_tools: list[str] = Field(default_factory=list)
     denied_tools: list[str] = Field(default_factory=list)
     parameter_deny_patterns: list[dict[str, object]] = Field(default_factory=list)
@@ -114,6 +122,7 @@ class AgencyConfig(BaseModel):
 
 class FormatValidationConfig(BaseModel):
     """输出格式校验配置"""
+
     expected_format: str = "text"
     json_schema: dict[str, object] | None = None
     on_mismatch: str = "log"
@@ -121,6 +130,7 @@ class FormatValidationConfig(BaseModel):
 
 class HallucinationConfig(BaseModel):
     """幻觉指标配置"""
+
     url_validation: bool = False
     verify_dns: bool = False
     url_timeout_ms: int = 2000
@@ -130,6 +140,7 @@ class HallucinationConfig(BaseModel):
 
 class JailbreakConfig(BaseModel):
     """多轮越狱检测配置"""
+
     session_timeout_minutes: int = 30
     max_history_turns: int = 20
     escalation_signals: list[dict[str, object]] = Field(default_factory=list)
@@ -139,6 +150,7 @@ class JailbreakConfig(BaseModel):
 
 class ToolLoopConfig(BaseModel):
     """工具调用循环检测配置"""
+
     max_consecutive_same_tool: int = 3
     max_cycle_length: int = 4
     max_total_tool_calls: int = 50
@@ -146,6 +158,7 @@ class ToolLoopConfig(BaseModel):
 
 class AnomalyConfig(BaseModel):
     """异常检测配置"""
+
     baselines: dict[str, object] = Field(default_factory=dict)
     learning_period_hours: int = 168
     alert_at_sigma: float = 3.0
@@ -155,12 +168,14 @@ class AnomalyConfig(BaseModel):
 # SafetyPlatformConfig（聚合配置）
 # ============================================================================
 
+
 class SafetyPlatformConfig(BaseModel):
     """AI Safety Platform 完整配置。
 
     Precondition: YAML 文件格式正确。
     Postcondition: engine 据此加载所有规则。
     """
+
     version: str = "2.0"
     enabled: bool = True
     input_rules: list[dict[str, object]] = Field(default_factory=list)
@@ -173,12 +188,14 @@ class SafetyPlatformConfig(BaseModel):
 # SessionState（供 SessionStore 使用）
 # ============================================================================
 
+
 @dataclass
 class SessionState:
     """单次会话的安全状态。
 
     Postcondition: SessionStore 根据此对象追踪跨请求攻击模式。
     """
+
     session_id: str
     escalation_score: float = 0.0
     history: list[dict[str, str]] = field(default_factory=list)
@@ -193,13 +210,15 @@ class SessionState:
 # AuditEvent（供 AuditLogger 使用）
 # ============================================================================
 
+
 class AuditEvent(BaseModel):
     """一次安全事件的审计记录。
 
     Postcondition: AuditLogger 将其持久化到审计存储。
     """
+
     event_id: str
-    event_type: str = ""                      # guard_hit | block | redact | config_change
+    event_type: str = ""  # guard_hit | block | redact | config_change
     rule_id: str = ""
     session_id: str | None = None
     trace_id: str | None = None

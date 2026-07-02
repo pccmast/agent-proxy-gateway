@@ -1,7 +1,7 @@
 """Policy module — centralized configuration management for all gateway policies."""
 
-from .store import PolicyStore, create_policy_store
 from .loader import GatewayPolicy, GuardrailRuleConfig
+from .store import PolicyStore, create_policy_store
 
 __all__ = [
     "PolicyStore",

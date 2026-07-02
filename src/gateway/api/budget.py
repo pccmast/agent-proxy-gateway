@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
 
 def create_budget_router(

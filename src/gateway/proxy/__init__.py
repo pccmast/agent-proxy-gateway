@@ -1,7 +1,7 @@
 """Proxy module — transparent HTTP proxy core for the gateway."""
 
-from .middleware import Middleware, MiddlewareChain, BlockException
 from .core import ProxyEngine
+from .middleware import BlockException, Middleware, MiddlewareChain
 from .sse import SSEInterceptor
 
 __all__ = [

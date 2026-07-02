@@ -2,7 +2,8 @@
 
 from typing import TYPE_CHECKING
 
-from shared.models import GuardResult, GuardAction
+from shared.models import GuardAction, GuardResult
+
 from .base import BaseGuardRule
 
 if TYPE_CHECKING:
@@ -31,14 +32,10 @@ class BehaviorAnomalyRule(BaseGuardRule):
             self._prompt_std = 200.0
         self._alert_sigma: float = float(self._config.get("alert_at_sigma", 3.0))
 
-    async def check_input(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_input(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, phase="input")
 
-    async def check_output(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_output(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return GuardResult(rule_id=self.rule_id, action=self.action)
 
     def _check(self, text: str, phase: str) -> GuardResult:

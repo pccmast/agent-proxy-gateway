@@ -3,7 +3,7 @@
 复用 TraceStore 的 aiosqlite 连接，写入 audit_events 表。
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from .config import AuditEvent
@@ -72,7 +72,8 @@ class AuditLogger:
         if self._store is not None:
             try:
                 from datetime import timedelta
-                since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+
+                since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
                 conditions = ["created_at >= ?"]
                 params: list[str | int] = [since]
                 if rule_id:
@@ -101,11 +102,13 @@ class AuditLogger:
             except Exception:
                 pass
         # 降级到内存查询
-        since = datetime.now(timezone.utc)
+        since = datetime.now(UTC)
         from datetime import timedelta
+
         cutoff = since - timedelta(hours=hours)
         filtered = [
-            e for e in self._memory_log
+            e
+            for e in self._memory_log
             if e.created_at >= cutoff
             and (not rule_id or e.rule_id == rule_id)
             and (not event_type or e.event_type == event_type)

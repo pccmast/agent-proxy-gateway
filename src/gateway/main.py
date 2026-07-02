@@ -6,31 +6,30 @@
 # registered via decorators are "unused" from the linter's perspective but are accessed
 # by FastAPI at runtime. Adding Protocol/TypeVar chains adds complexity without benefit.
 
+import asyncio
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-import asyncio
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from shared.config import load_config
-from shared.logging import setup_logging, get_logger
-
 from gateway.adapter.normalizer import create_registry
-from gateway.proxy.core import ProxyEngine
-from gateway.proxy.middleware import MiddlewareChain
-from gateway.trace.store import TraceStore
-from gateway.trace.engine import TraceEngine
-from gateway.policy.store import PolicyStore
+from gateway.budget.circuit_breaker import CircuitBreaker
+from gateway.budget.rate_limiter import RateLimitConfig, SlidingWindowRateLimiter
+from gateway.budget.request_timeout import RequestTimeoutGuard
+from gateway.budget.token_counter import TokenCounter
+from gateway.eval.llm_judge import LLMJudgeEvaluator
+from gateway.eval.pipeline import EvalPipeline
 from gateway.guardrails.engine import GuardrailsEngine
 from gateway.guardrails.sqlite_session import SQLiteSessionStore
-from gateway.budget.rate_limiter import SlidingWindowRateLimiter, RateLimitConfig
-from gateway.budget.token_counter import TokenCounter
-from gateway.budget.circuit_breaker import CircuitBreaker
-from gateway.budget.request_timeout import RequestTimeoutGuard
-from gateway.eval.pipeline import EvalPipeline
-from gateway.eval.llm_judge import LLMJudgeEvaluator
+from gateway.policy.store import PolicyStore
+from gateway.proxy.core import ProxyEngine
+from gateway.proxy.middleware import MiddlewareChain
+from gateway.trace.engine import TraceEngine
+from gateway.trace.store import TraceStore
+from shared.config import load_config
+from shared.logging import get_logger, setup_logging
 
 setup_logging()
 logger = get_logger()
@@ -48,9 +47,7 @@ _eval_pipeline: EvalPipeline | None = None
 _cleanup_task: asyncio.Task[object] | None = None
 
 
-async def _cleanup_abandoned_spans_loop(
-    trace_engine: TraceEngine, interval_seconds: float = 300.0
-) -> None:
+async def _cleanup_abandoned_spans_loop(trace_engine: TraceEngine, interval_seconds: float = 300.0) -> None:
     """Background task: periodically mark orphan spans as abandoned."""
     while True:
         try:
@@ -135,7 +132,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # Fallback: read from env var specified in config
             api_key = os.environ.get(eval_cfg.llm_judge.api_key_env, "")
         if api_key:
-            llm_judge = LLMJudgeEvaluator(model=eval_cfg.llm_judge.model, api_key=api_key, sample_rate=eval_cfg.llm_judge.sample_rate)
+            llm_judge = LLMJudgeEvaluator(
+                model=eval_cfg.llm_judge.model, api_key=api_key, sample_rate=eval_cfg.llm_judge.sample_rate
+            )
     _eval_pipeline = EvalPipeline(
         max_response_length=eval_cfg.heuristic.max_response_length,
         repetition_threshold=eval_cfg.heuristic.repetition_threshold,
@@ -172,9 +171,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("gateway_initialized", providers=adapter_registry.list_providers())
 
     # Start background abandoned-span cleanup task
-    _cleanup_task = asyncio.create_task(
-        _cleanup_abandoned_spans_loop(_trace_engine, interval_seconds=300.0)
-    )
+    _cleanup_task = asyncio.create_task(_cleanup_abandoned_spans_loop(_trace_engine, interval_seconds=300.0))
 
     yield
 
@@ -203,8 +200,10 @@ def create_app() -> FastAPI:
     @app.get("/metrics")
     async def metrics():
         from fastapi.responses import Response
+
         try:
             from gateway.metrics import metrics_response
+
             return Response(content=metrics_response(), media_type="text/plain")
         except ImportError:
             return Response(
@@ -217,29 +216,34 @@ def create_app() -> FastAPI:
     @app.api_route("/api/traces/stats", methods=["GET"], tags=["traces"])
     async def get_stats(hours: int = 24):
         e = getattr(app.state, "trace_engine", None)
-        if not e: return JSONResponse(status_code=503, content={"error": "Trace engine not ready"})
+        if not e:
+            return JSONResponse(status_code=503, content={"error": "Trace engine not ready"})
         return await e.get_stats(hours=hours)
 
     @app.api_route("/api/traces", methods=["GET"], tags=["traces"])
     async def list_traces(limit: int = 50, offset: int = 0):
         e = getattr(app.state, "trace_engine", None)
-        if not e: return JSONResponse(status_code=503, content={"error": "Trace engine not ready"})
+        if not e:
+            return JSONResponse(status_code=503, content={"error": "Trace engine not ready"})
         traces = await e.list_traces(limit=limit, offset=offset)
         return {"traces": traces, "count": len(traces)}
 
     @app.api_route("/api/traces/{trace_id}", methods=["GET"], tags=["traces"])
     async def get_trace(trace_id: str):
         e = getattr(app.state, "trace_engine", None)
-        if not e: return JSONResponse(status_code=503, content={"error": "Trace engine not ready"})
+        if not e:
+            return JSONResponse(status_code=503, content={"error": "Trace engine not ready"})
         trace = await e.get_trace(trace_id)
-        if not trace: return JSONResponse(status_code=404, content={"error": "Trace not found"})
+        if not trace:
+            return JSONResponse(status_code=404, content={"error": "Trace not found"})
         return {"trace": trace, "span_tree": await e.get_span_tree(trace_id)}
 
     # Guardrails
     @app.api_route("/api/guardrails/stats", methods=["GET"], tags=["guardrails"])
     async def guardrails_stats():
         ge = getattr(app.state, "guardrails_engine", None)
-        if not ge: return JSONResponse(status_code=503, content={"error": "Guardrails not enabled"})
+        if not ge:
+            return JSONResponse(status_code=503, content={"error": "Guardrails not enabled"})
         s = ge.get_stats()
         # v2: stats 结构为 {rule_id: {"total": N, "block": N, ...}}
         total_hits = sum(v.get("total", 0) for v in s.values())
@@ -248,26 +252,31 @@ def create_app() -> FastAPI:
     @app.api_route("/api/guardrails/rules", methods=["GET"], tags=["guardrails"])
     async def guardrails_rules():
         ge = getattr(app.state, "guardrails_engine", None)
-        if not ge: return JSONResponse(status_code=503, content={"error": "Guardrails not enabled"})
+        if not ge:
+            return JSONResponse(status_code=503, content={"error": "Guardrails not enabled"})
         return {"rules": [{"id": r.rule_id, "action": r.action.value, "enabled": r.enabled} for r in ge.rules]}
 
     # Budget
     @app.api_route("/api/budget/status", methods=["GET"], tags=["budget"])
     async def budget_status(agent_id: str = "default"):
         tc = getattr(app.state, "token_counter", None)
-        if not tc: return JSONResponse(status_code=503, content={"error": "Budget not configured"})
+        if not tc:
+            return JSONResponse(status_code=503, content={"error": "Budget not configured"})
         return tc.check_budget(agent_id) if agent_id else {"agents": tc.get_status()}
 
     # Eval
     @app.api_route("/api/eval/metrics", methods=["GET"], tags=["eval"])
     async def eval_metrics():
-        return {"metrics": ["response_length", "repetition", "latency", "tool_call", "relevance", "safety", "coherence"]}
+        return {
+            "metrics": ["response_length", "repetition", "latency", "tool_call", "relevance", "safety", "coherence"]
+        }
 
     # Catch-all
     @app.api_route("/{path:path}", methods=["POST", "GET", "PUT", "DELETE", "PATCH"])
     async def proxy_catchall(request: Request, path: str):
         engine = getattr(app.state, "proxy_engine", None)
-        if not engine: return JSONResponse(status_code=503, content={"error": "Proxy engine not ready"})
+        if not engine:
+            return JSONResponse(status_code=503, content={"error": "Proxy engine not ready"})
         return await engine.handle_request(request)
 
     return app
@@ -275,6 +284,7 @@ def create_app() -> FastAPI:
 
 def run_server() -> None:
     import uvicorn
+
     config = load_config()
     # reload=True is dev-only and breaks in containers (watcher exits code 0)
     uvicorn.run("gateway.main:create_app", factory=True, host=config.host, port=config.port)
@@ -286,6 +296,7 @@ def validate_config() -> None:
     Usage: uv run validate-config
     """
     import sys
+
     from gateway.policy.store import PolicyStore
 
     config_dir = os.environ.get("GATEWAY_CONFIG_DIR", "./config")
@@ -293,8 +304,7 @@ def validate_config() -> None:
         store = PolicyStore(config_dir=config_dir)
         store.reload()
         policy = store.policy
-        print(f"Config OK — {len(policy.guardrails.rules)} guardrail rules, "
-              f"{len(policy.proxy.providers)} provider(s)")
+        print(f"Config OK — {len(policy.guardrails.rules)} guardrail rules, {len(policy.proxy.providers)} provider(s)")
         sys.exit(0)
     except Exception as e:
         print(f"Config ERROR: {e}", file=sys.stderr)

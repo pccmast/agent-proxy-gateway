@@ -1,8 +1,7 @@
 """Budget dashboard page — token consumption trends and budget status."""
 
-import streamlit as st
-import pandas as pd
 import httpx
+import streamlit as st
 
 from shared.constants import DEFAULT_GATEWAY_URL
 

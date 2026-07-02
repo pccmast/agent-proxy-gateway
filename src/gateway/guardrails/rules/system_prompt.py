@@ -3,7 +3,8 @@
 import re
 from typing import TYPE_CHECKING
 
-from shared.models import GuardResult, GuardAction
+from shared.models import GuardAction, GuardResult
+
 from .base import BaseGuardRule
 
 if TYPE_CHECKING:
@@ -39,18 +40,12 @@ class SystemPromptExtractionRule(BaseGuardRule):
             raw = [p if isinstance(p, str) else str(p) for p in patterns]
         else:
             raw = _DEFAULT_EXTRACTION_PATTERNS
-        self._patterns: list[re.Pattern[str]] = [
-            re.compile(p, re.IGNORECASE) for p in raw
-        ]
+        self._patterns: list[re.Pattern[str]] = [re.compile(p, re.IGNORECASE) for p in raw]
 
-    async def check_input(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_input(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, phase="input")
 
-    async def check_output(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_output(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return GuardResult(rule_id=self.rule_id, action=self.action)
 
     def _check(self, text: str, phase: str) -> GuardResult:
@@ -76,6 +71,7 @@ class SystemPromptExtractionRule(BaseGuardRule):
 # SystemPromptLeakageRule — 输出侧：检测模型回复是否泄露系统提示
 # ============================================================================
 
+
 class SystemPromptLeakageRule(BaseGuardRule):
     """检测模型回复中是否泄露了系统提示词（output 阶段）。
 
@@ -91,23 +87,18 @@ class SystemPromptLeakageRule(BaseGuardRule):
         self._ngram_n: int = int(self._config.get("ngram_n", 5))
         self._ngram_threshold: float = float(self._config.get("ngram_threshold", 0.3))
         key_phrases = self._config.get("key_phrases", [])
-        self._key_phrases: list[str] = (
-            [str(p) for p in key_phrases] if isinstance(key_phrases, list) else []
-        )
+        self._key_phrases: list[str] = [str(p) for p in key_phrases] if isinstance(key_phrases, list) else []
         self._match_threshold: int = int(self._config.get("match_threshold", 2))
         # 从环境变量获取系统提示（实际部署时从配置注入）
         import os
+
         src = self._config.get("system_prompt_source", "SYSTEM_PROMPT")
         self._system_prompt: str = os.environ.get(str(src), "")
 
-    async def check_input(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_input(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return GuardResult(rule_id=self.rule_id, action=self.action)
 
-    async def check_output(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_output(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, phase="output")
 
     def _check(self, text: str, phase: str) -> GuardResult:
@@ -139,11 +130,12 @@ class SystemPromptLeakageRule(BaseGuardRule):
 
     def _ngram_overlap(self, text: str, reference: str) -> float:
         """计算 text 和 reference 的 n-gram 重叠率."""
+
         def ngrams(s: str, n: int) -> set[str]:
             tokens = s.lower().split()
             if len(tokens) < n:
                 return set()
-            return {" ".join(tokens[i:i+n]) for i in range(len(tokens) - n + 1)}
+            return {" ".join(tokens[i : i + n]) for i in range(len(tokens) - n + 1)}
 
         text_ngrams = ngrams(text, self._ngram_n)
         ref_ngrams = ngrams(reference, self._ngram_n)

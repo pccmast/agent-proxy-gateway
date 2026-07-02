@@ -5,17 +5,17 @@ simple character-based heuristic. Extracts actual usage from NormalizedResponse.
 Maintains per-agent cumulative counters with budget threshold warnings.
 """
 
-from shared.models import NormalizedRequest, NormalizedResponse, TokenUsage
 from shared.logging import get_logger
+from shared.models import NormalizedRequest
 
 logger = get_logger()
 
 # Approximate tokens-per-character ratios for common models
 _CHAR_RATIO: dict[str, float] = {
-    "gpt-4o": 0.25,       # ~4 chars/token
+    "gpt-4o": 0.25,  # ~4 chars/token
     "gpt-4": 0.25,
     "gpt-3.5-turbo": 0.25,
-    "claude-3": 0.30,     # ~3.3 chars/token
+    "claude-3": 0.30,  # ~3.3 chars/token
     "claude-3-opus": 0.30,
     "default": 0.25,
 }

@@ -1,7 +1,7 @@
 """Anthropic protocol adapter — maps Anthropic Messages API to NormalizedRequest/Response."""
 
 import json
-from typing import Any, cast
+from typing import Any
 
 from fastapi import Request
 
@@ -9,11 +9,12 @@ from shared.models import (
     Message,
     NormalizedRequest,
     NormalizedResponse,
-    TokenUsage,
     StreamChunk,
-    ToolDef,
+    TokenUsage,
     ToolCall,
+    ToolDef,
 )
+
 from .base import ProtocolAdapter
 
 # Sentinel
@@ -56,7 +57,9 @@ class AnthropicAdapter(ProtocolAdapter):
                 messages.append(Message(role="system", content=system_prompt))
             elif isinstance(system_prompt, list):
                 # Anthropic supports system as structured content blocks
-                text_parts = [b.get("text", "") for b in system_prompt if isinstance(b, dict) and b.get("type") == "text"]
+                text_parts = [
+                    b.get("text", "") for b in system_prompt if isinstance(b, dict) and b.get("type") == "text"
+                ]
                 messages.append(Message(role="system", content=" ".join(text_parts)))
 
         for m in messages_raw:
@@ -215,7 +218,9 @@ class AnthropicAdapter(ProtocolAdapter):
             normalized_path = path[3:]  # "/v1/messages" → "/messages"
         return base + normalized_path
 
-    def get_upstream_headers(self, original_headers: dict[str, str], api_key: str, base_url: str = "") -> dict[str, str]:
+    def get_upstream_headers(
+        self, original_headers: dict[str, str], api_key: str, base_url: str = ""
+    ) -> dict[str, str]:
         """Replace auth headers with Anthropic's x-api-key format."""
         skip = {"host", "x-api-key", "authorization", "transfer-encoding"}
         headers = {k: v for k, v in original_headers.items() if k.lower() not in skip}
@@ -223,6 +228,7 @@ class AnthropicAdapter(ProtocolAdapter):
         # Derive Host from base_url when available, fallback to api.anthropic.com
         if base_url:
             from urllib.parse import urlparse
+
             host = urlparse(base_url).netloc
             headers["Host"] = host if host else "api.anthropic.com"
         else:

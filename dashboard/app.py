@@ -8,7 +8,7 @@ import httpx
 import pandas as pd
 import streamlit as st
 
-from shared.constants import DEFAULT_GATEWAY_URL, DEFAULT_GATEWAY_PORT
+from shared.constants import DEFAULT_GATEWAY_PORT, DEFAULT_GATEWAY_URL
 
 st.set_page_config(
     page_title="Agent Gateway Dashboard",
@@ -143,7 +143,7 @@ if page == "Overview":
         try:
             budget = httpx.get(f"{GATEWAY_API_URL}/api/budget/status", params={"agent_id": "default"}, timeout=3).json()
             ratio = budget.get("daily_ratio", 0)
-            st.metric("Daily Budget", f"{ratio*100:.1f}%", delta="OK" if budget.get("budget_ok") else "EXCEEDED")
+            st.metric("Daily Budget", f"{ratio * 100:.1f}%", delta="OK" if budget.get("budget_ok") else "EXCEEDED")
         except Exception:
             st.metric("Daily Budget", "—")
 
@@ -252,7 +252,9 @@ elif page == "Traces":
                     s = t.get("status", "unknown")
                     status_counts[s] = status_counts.get(s, 0) + 1
                 if status_counts:
-                    status_df = pd.DataFrame({"Status": list(status_counts.keys()), "Count": list(status_counts.values())})
+                    status_df = pd.DataFrame(
+                        {"Status": list(status_counts.keys()), "Count": list(status_counts.values())}
+                    )
                     st.bar_chart(status_df.set_index("Status"), use_container_width=True)
 
                 st.metric("Total Traces", len(traces))
@@ -261,14 +263,16 @@ elif page == "Traces":
                 # Table view
                 rows = []
                 for t in filtered:
-                    rows.append({
-                        "Trace ID": t.get("trace_id", "")[:8] + "...",
-                        "Agent": t.get("agent_id", "-"),
-                        "Status": t.get("status", "?").upper(),
-                        "Tokens": t.get("total_tokens", 0),
-                        "Latency (ms)": round(t.get("total_latency_ms", 0), 1),
-                        "Created": t.get("created_at", ""),
-                    })
+                    rows.append(
+                        {
+                            "Trace ID": t.get("trace_id", "")[:8] + "...",
+                            "Agent": t.get("agent_id", "-"),
+                            "Status": t.get("status", "?").upper(),
+                            "Tokens": t.get("total_tokens", 0),
+                            "Latency (ms)": round(t.get("total_latency_ms", 0), 1),
+                            "Created": t.get("created_at", ""),
+                        }
+                    )
 
                 df = pd.DataFrame(rows)
                 st.dataframe(df, use_container_width=True, hide_index=True)
@@ -278,7 +282,11 @@ elif page == "Traces":
                 selected = st.selectbox(
                     "Select a trace to inspect",
                     [t.get("trace_id", "") for t in filtered] if filtered else [""],
-                    format_func=lambda tid: f"{tid[:12]}... — {next((t.get('status','?') for t in filtered if t.get('trace_id')==tid),'?')}" if tid else "—",
+                    format_func=lambda tid: (
+                        f"{tid[:12]}... — {next((t.get('status', '?') for t in filtered if t.get('trace_id') == tid), '?')}"
+                        if tid
+                        else "—"
+                    ),
                 )
 
                 if selected:
@@ -345,10 +353,10 @@ elif page == "Budget":
 
             h_col, d_col = st.columns(2)
             with h_col:
-                st.metric("Hourly", f"{h_ratio*100:.1f}%")
+                st.metric("Hourly", f"{h_ratio * 100:.1f}%")
                 st.progress(h_ratio)
             with d_col:
-                st.metric("Daily", f"{d_ratio*100:.1f}%")
+                st.metric("Daily", f"{d_ratio * 100:.1f}%")
                 st.progress(d_ratio)
 
             # Status
@@ -392,7 +400,7 @@ elif page == "Eval":
                 st.metric("Total Evaluations", total_evals)
             with col2:
                 pass_rate = eval_data.get("pass_rate", 0)
-                st.metric("Pass Rate", f"{pass_rate*100:.1f}%")
+                st.metric("Pass Rate", f"{pass_rate * 100:.1f}%")
             with col3:
                 avg_score = eval_data.get("average_score", 0)
                 st.metric("Avg Score", f"{avg_score:.2f}")
@@ -401,10 +409,7 @@ elif page == "Eval":
             st.subheader("Score Distribution")
             scores = eval_data.get("score_distribution", {})
             if scores:
-                score_df = pd.DataFrame({
-                    "Score Range": list(scores.keys()),
-                    "Count": list(scores.values())
-                })
+                score_df = pd.DataFrame({"Score Range": list(scores.keys()), "Count": list(scores.values())})
                 st.bar_chart(score_df.set_index("Score Range"), use_container_width=True)
             else:
                 st.info("No evaluation scores recorded yet.")
@@ -416,12 +421,14 @@ elif page == "Eval":
                 metric_rows = []
                 for metric_name, metric_data in metrics.items():
                     if isinstance(metric_data, dict):
-                        metric_rows.append({
-                            "Metric": metric_name,
-                            "Avg Score": metric_data.get("average", 0),
-                            "Pass Rate": f"{metric_data.get('pass_rate', 0)*100:.1f}%",
-                            "Count": metric_data.get("count", 0),
-                        })
+                        metric_rows.append(
+                            {
+                                "Metric": metric_name,
+                                "Avg Score": metric_data.get("average", 0),
+                                "Pass Rate": f"{metric_data.get('pass_rate', 0) * 100:.1f}%",
+                                "Count": metric_data.get("count", 0),
+                            }
+                        )
                 if metric_rows:
                     metric_df = pd.DataFrame(metric_rows)
                     st.dataframe(metric_df, use_container_width=True, hide_index=True)

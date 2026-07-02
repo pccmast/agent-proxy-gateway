@@ -12,8 +12,9 @@ the request, since the leak is typically unintentional.
 import re
 from typing import TYPE_CHECKING
 
-from shared.models import GuardResult, GuardAction
 from shared.logging import get_logger
+from shared.models import GuardAction, GuardResult
+
 from .base import BaseGuardRule
 
 if TYPE_CHECKING:
@@ -37,14 +38,15 @@ _CREDENTIAL_PATTERNS: list[tuple[str, str, float]] = [
     # AWS Secret Access Key (40 base64 chars)
     (r"\b(?<![A-Za-z0-9/+])[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+])", "aws_secret_key", 0.70),
     # Generic key=value secrets (long hex/base64 values)
-    (r"(?:api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*[\'\"][^\'\"]{16,}[\'\"]",
-     "key_value_secret", 0.80),
+    (
+        r"(?:api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*[\'\"][^\'\"]{16,}[\'\"]",
+        "key_value_secret",
+        0.80,
+    ),
     # Connection strings (SQL / MongoDB / Redis)
-    (r"\b(?:mongodb|mysql|postgresql|redis)://[^@\s]+:[^@\s]+@[^\s]+",
-     "connection_string", 0.85),
+    (r"\b(?:mongodb|mysql|postgresql|redis)://[^@\s]+:[^@\s]+@[^\s]+", "connection_string", 0.85),
     # Private key headers (SSH / PEM / PGP)
-    (r"-----BEGIN\s+(?:RSA|DSA|EC|OPENSSH|PGP)\s+PRIVATE\s+KEY-----",
-     "private_key", 0.95),
+    (r"-----BEGIN\s+(?:RSA|DSA|EC|OPENSSH|PGP)\s+PRIVATE\s+KEY-----", "private_key", 0.95),
 ]
 
 
@@ -75,14 +77,10 @@ class CredentialLeakRule(BaseGuardRule):
 
     # ------------------------------------------------------------------ rule API
 
-    async def check_input(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_input(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, phase="input")
 
-    async def check_output(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_output(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, phase="output")
 
     # ---------------------------------------------------------------- internal

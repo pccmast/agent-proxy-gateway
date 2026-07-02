@@ -6,7 +6,7 @@
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from shared.models import GuardResult, GuardAction
+from shared.models import GuardAction, GuardResult
 
 if TYPE_CHECKING:
     from ..config import RuleScope, SessionState
@@ -19,12 +19,12 @@ class BaseGuardRule(ABC):
     Postcondition: engine 通过 discover_rules() 发现所有实现。
     """
 
-    rule_type: str = ""                           # 如 "injection"、"pii"
+    rule_type: str = ""  # 如 "injection"、"pii"
     rule_id: str = ""
     action: GuardAction = GuardAction.LOG
     confidence_threshold: float = 0.7
     enabled: bool = True
-    severity: str = "medium"                      # [新增]
+    severity: str = "medium"  # [新增]
 
     def __init__(
         self,
@@ -33,8 +33,8 @@ class BaseGuardRule(ABC):
         severity: str = "medium",
         confidence_threshold: float = 0.7,
         enabled: bool = True,
-        scope: "RuleScope | None" = None,          # [新增]
-        config: dict[str, object] | None = None,   # [新增] 类型特定配置
+        scope: "RuleScope | None" = None,  # [新增]
+        config: dict[str, object] | None = None,  # [新增] 类型特定配置
     ) -> None:
         # 仅在显式传入时覆盖子类默认值
         if rule_id is not None:
@@ -99,7 +99,7 @@ class BaseGuardRule(ABC):
         import importlib
         from pathlib import Path
 
-        registry: dict[str, type["BaseGuardRule"]] = {}
+        registry: dict[str, type[BaseGuardRule]] = {}
         rules_dir = Path(__file__).parent
 
         for file in rules_dir.glob("*.py"):
@@ -107,9 +107,7 @@ class BaseGuardRule(ABC):
                 continue
             module_name = file.stem
             try:
-                module = importlib.import_module(
-                    f".{module_name}", package=__package__
-                )
+                module = importlib.import_module(f".{module_name}", package=__package__)
                 for attr_name in dir(module):
                     attr = getattr(module, attr_name)
                     if (

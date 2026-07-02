@@ -7,21 +7,20 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from shared.config import load_config
-from shared.logging import setup_logging, get_logger
-
 from gateway.adapter.normalizer import create_registry
+from gateway.budget.circuit_breaker import CircuitBreaker
+from gateway.budget.rate_limiter import RateLimitConfig, SlidingWindowRateLimiter
+from gateway.budget.token_counter import TokenCounter
+from gateway.eval.llm_judge import LLMJudgeEvaluator
+from gateway.eval.pipeline import EvalPipeline
+from gateway.guardrails.engine import GuardrailsEngine
+from gateway.policy.store import PolicyStore
 from gateway.proxy.core import ProxyEngine
 from gateway.proxy.middleware import MiddlewareChain
-from gateway.trace.store import TraceStore
 from gateway.trace.engine import TraceEngine
-from gateway.policy.store import PolicyStore
-from gateway.guardrails.engine import GuardrailsEngine
-from gateway.budget.rate_limiter import SlidingWindowRateLimiter, RateLimitConfig
-from gateway.budget.token_counter import TokenCounter
-from gateway.budget.circuit_breaker import CircuitBreaker
-from gateway.eval.pipeline import EvalPipeline
-from gateway.eval.llm_judge import LLMJudgeEvaluator
+from gateway.trace.store import TraceStore
+from shared.config import load_config
+from shared.logging import get_logger, setup_logging
 
 setup_logging()
 logger = get_logger()
@@ -92,7 +91,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if eval_cfg.llm_judge.enabled:
         api_key = os.environ.get(eval_cfg.llm_judge.api_key_env, os.environ.get("OPENAI_API_KEY", ""))
         if api_key:
-            llm_judge = LLMJudgeEvaluator(model=eval_cfg.llm_judge.model, api_key=api_key, sample_rate=eval_cfg.llm_judge.sample_rate)
+            llm_judge = LLMJudgeEvaluator(
+                model=eval_cfg.llm_judge.model, api_key=api_key, sample_rate=eval_cfg.llm_judge.sample_rate
+            )
     _eval_pipeline = EvalPipeline(
         max_response_length=eval_cfg.heuristic.max_response_length,
         repetition_threshold=eval_cfg.heuristic.repetition_threshold,
@@ -147,55 +148,65 @@ def create_app() -> FastAPI:
     @app.api_route("/api/traces", methods=["GET"], tags=["traces"])
     async def list_traces(limit: int = 50, offset: int = 0):
         e = getattr(app.state, "trace_engine", None)
-        if not e: return JSONResponse(503, content={"error": "Trace engine not ready"})
+        if not e:
+            return JSONResponse(503, content={"error": "Trace engine not ready"})
         traces = await e.list_traces(limit=limit, offset=offset)
         return {"traces": traces, "count": len(traces)}
 
     @app.api_route("/api/traces/{trace_id}", methods=["GET"], tags=["traces"])
     async def get_trace(trace_id: str):
         e = getattr(app.state, "trace_engine", None)
-        if not e: return JSONResponse(503, content={"error": "Trace engine not ready"})
+        if not e:
+            return JSONResponse(503, content={"error": "Trace engine not ready"})
         trace = await e.get_trace(trace_id)
-        if not trace: return JSONResponse(404, content={"error": "Trace not found"})
+        if not trace:
+            return JSONResponse(404, content={"error": "Trace not found"})
         return {"trace": trace, "span_tree": await e.get_span_tree(trace_id)}
 
     @app.api_route("/api/traces/stats", methods=["GET"], tags=["traces"])
     async def get_stats(hours: int = 24):
         e = getattr(app.state, "trace_engine", None)
-        if not e: return JSONResponse(503, content={"error": "Trace engine not ready"})
+        if not e:
+            return JSONResponse(503, content={"error": "Trace engine not ready"})
         return await e.get_stats(hours=hours)
 
     # Guardrails
     @app.api_route("/api/guardrails/stats", methods=["GET"], tags=["guardrails"])
     async def guardrails_stats():
         ge = getattr(app.state, "guardrails_engine", None)
-        if not ge: return JSONResponse(503, content={"error": "Guardrails not enabled"})
+        if not ge:
+            return JSONResponse(503, content={"error": "Guardrails not enabled"})
         s = ge.get_stats()
         return {"stats": s, "total_hits": sum(s.values())}
 
     @app.api_route("/api/guardrails/rules", methods=["GET"], tags=["guardrails"])
     async def guardrails_rules():
         ge = getattr(app.state, "guardrails_engine", None)
-        if not ge: return JSONResponse(503, content={"error": "Guardrails not enabled"})
+        if not ge:
+            return JSONResponse(503, content={"error": "Guardrails not enabled"})
         return {"rules": [{"id": r.rule_id, "action": r.action.value, "enabled": r.enabled} for r in ge.rules]}
 
     # Budget
     @app.api_route("/api/budget/status", methods=["GET"], tags=["budget"])
     async def budget_status(agent_id: str = "default"):
         tc = getattr(app.state, "token_counter", None)
-        if not tc: return JSONResponse(503, content={"error": "Budget not configured"})
+        if not tc:
+            return JSONResponse(503, content={"error": "Budget not configured"})
         return tc.check_budget(agent_id) if agent_id else {"agents": tc.get_status()}
 
     # Eval
     @app.api_route("/api/eval/metrics", methods=["GET"], tags=["eval"])
     async def eval_metrics():
-        return {"metrics": ["response_length", "repetition", "latency", "tool_call", "relevance", "safety", "coherence"]}
+        return {
+            "metrics": ["response_length", "repetition", "latency", "tool_call", "relevance", "safety", "coherence"]
+        }
 
     # Catch-all
     @app.api_route("/{path:path}", methods=["POST", "GET", "PUT", "DELETE", "PATCH"])
     async def proxy_catchall(request: Request, path: str):
         engine = getattr(app.state, "proxy_engine", None)
-        if not engine: return JSONResponse(503, content={"error": "Proxy engine not ready"})
+        if not engine:
+            return JSONResponse(503, content={"error": "Proxy engine not ready"})
         return await engine.handle_request(request)
 
     return app
@@ -203,6 +214,7 @@ def create_app() -> FastAPI:
 
 def run_server() -> None:
     import uvicorn
+
     config = load_config()
     uvicorn.run("gateway.main:create_app", factory=True, host=config.host, port=config.port, reload=True)
 

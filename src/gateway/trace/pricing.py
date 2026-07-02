@@ -10,13 +10,13 @@ from typing import Final
 # 定价表常量 — 键为 model 标识符，值为 {"input": $/token, "output": $/token}
 # ============================================================================
 PRICING_USD_PER_TOKEN: Final[dict[str, dict[str, float]]] = {
-    "gpt-4o":                    {"input": 2.50 / 1e6,  "output": 10.00 / 1e6},
-    "gpt-4o-mini":               {"input": 0.15 / 1e6,  "output": 0.60 / 1e6},
-    "gpt-4-turbo":               {"input": 10.00 / 1e6, "output": 30.00 / 1e6},
-    "gpt-3.5-turbo":             {"input": 0.50 / 1e6,  "output": 1.50 / 1e6},
-    "claude-3-opus-20240229":    {"input": 15.00 / 1e6, "output": 75.00 / 1e6},
-    "claude-3-sonnet-20240229":  {"input": 3.00 / 1e6,  "output": 15.00 / 1e6},
-    "claude-3-haiku-20240307":   {"input": 0.25 / 1e6,  "output": 1.25 / 1e6},
+    "gpt-4o": {"input": 2.50 / 1e6, "output": 10.00 / 1e6},
+    "gpt-4o-mini": {"input": 0.15 / 1e6, "output": 0.60 / 1e6},
+    "gpt-4-turbo": {"input": 10.00 / 1e6, "output": 30.00 / 1e6},
+    "gpt-3.5-turbo": {"input": 0.50 / 1e6, "output": 1.50 / 1e6},
+    "claude-3-opus-20240229": {"input": 15.00 / 1e6, "output": 75.00 / 1e6},
+    "claude-3-sonnet-20240229": {"input": 3.00 / 1e6, "output": 15.00 / 1e6},
+    "claude-3-haiku-20240307": {"input": 0.25 / 1e6, "output": 1.25 / 1e6},
     # 兜底: 未匹配的模型返回 0.0
 }
 

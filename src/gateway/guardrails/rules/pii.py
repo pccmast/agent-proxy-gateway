@@ -6,8 +6,9 @@ v2 — upgraded with secrets_detection + custom_terms_file support.
 import re
 from typing import TYPE_CHECKING, Any
 
-from shared.models import GuardResult, GuardAction
 from shared.logging import get_logger
+from shared.models import GuardAction, GuardResult
+
 from .base import BaseGuardRule
 
 if TYPE_CHECKING:
@@ -32,8 +33,10 @@ _FAST_PATH_PATTERNS: list[tuple[str, str]] = [
     # Anchored to surname prefix to avoid matching arbitrary 2-4 char sequences
     # like "天气", "代码", "北京" that dominate normal Chinese conversation.
     # Covers ~120 of the most common Chinese family names.
-    (r"(?:王|李|张|刘|陈|杨|黄|赵|周|吴|徐|孙|马|朱|胡|郭|何|高|林|罗|郑|梁|谢|宋|唐|许|韩|冯|邓|曹|彭|曾|肖|田|董|潘|袁|蔡|蒋|余|于|杜|叶|程|苏|魏|吕|丁|任|沈|姚|卢|姜|崔|钟|谭|陆|汪|范|石|廖|贾|夏|韦|傅|方|白|邹|孟|熊|秦|邱|江|尹|薛|闫|段|雷|侯|龙|史|黎|贺|顾|毛|郝|龚|邵|万|钱|覃|戴|严|莫|孔|向|常|冯|汤|赖|武|康|贺|余|施|牛|洪|龚)[\u4e00-\u9fff]{1,2}",
-        "name_cn"),
+    (
+        r"(?:王|李|张|刘|陈|杨|黄|赵|周|吴|徐|孙|马|朱|胡|郭|何|高|林|罗|郑|梁|谢|宋|唐|许|韩|冯|邓|曹|彭|曾|肖|田|董|潘|袁|蔡|蒋|余|于|杜|叶|程|苏|魏|吕|丁|任|沈|姚|卢|姜|崔|钟|谭|陆|汪|范|石|廖|贾|夏|韦|傅|方|白|邹|孟|熊|秦|邱|江|尹|薛|闫|段|雷|侯|龙|史|黎|贺|顾|毛|郝|龚|邵|万|钱|覃|戴|严|莫|孔|向|常|冯|汤|赖|武|康|贺|余|施|牛|洪|龚)[\u4e00-\u9fff]{1,2}",
+        "name_cn",
+    ),
 ]
 
 
@@ -83,6 +86,7 @@ class PIIDetectionRule(BaseGuardRule):
     def _init_presidio(self) -> None:
         try:
             from presidio_analyzer import AnalyzerEngine
+
             self._analyzer = AnalyzerEngine()
             self._presidio_loaded = True
             logger.info("pii_presidio_loaded")
@@ -129,7 +133,7 @@ class PIIDetectionRule(BaseGuardRule):
                     score_threshold=self.confidence_threshold,
                 )
                 for r in results:
-                    matched = text[r.start:r.end]
+                    matched = text[r.start : r.end]
                     if matched and matched not in matches:
                         matches.append(matched)
                         max_confidence = max(max_confidence, r.score)

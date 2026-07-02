@@ -92,12 +92,9 @@ PROXY_CHECK: dict[str, object] = {
 # ---------------------------------------------------------------------------
 
 import urllib.request as _req
-import urllib.error as _err
 
 
-def _http_request(
-    method: str, url: str, body: str | None = None, timeout: int = DEFAULT_TIMEOUT
-) -> tuple[int, str]:
+def _http_request(method: str, url: str, body: str | None = None, timeout: int = DEFAULT_TIMEOUT) -> tuple[int, str]:
     data = body.encode("utf-8") if body else None
     req = _req.Request(
         url,
@@ -117,12 +114,17 @@ def _http_request(
 # ---------------------------------------------------------------------------
 
 _COLOUR = {
-    "PASS": "\033[32m", "FAIL": "\033[31m", "SKIP": "\033[33m",
-    "RESET": "\033[0m", "DIM": "\033[2m", "BOLD": "\033[1m",
+    "PASS": "\033[32m",
+    "FAIL": "\033[31m",
+    "SKIP": "\033[33m",
+    "RESET": "\033[0m",
+    "DIM": "\033[2m",
+    "BOLD": "\033[1m",
 }
 
 
-def _c(c: str) -> str: return _COLOUR.get(c, "")
+def _c(c: str) -> str:
+    return _COLOUR.get(c, "")
 
 
 class Reporter:
@@ -145,7 +147,7 @@ class Reporter:
         print(f"{_c('BOLD')}─── Results ({total_s:.1f}s) ──{_c('RESET')}")
         for r in self.results:
             s = f"{_c(str(r['status']))}{r['status']:<6}{_c('RESET')}"
-            line = f"  {s} {str(r['name']):<28}  {str(r.get('code','')):<6}  {str(r.get('elapsed_ms',''))}ms"
+            line = f"  {s} {str(r['name']):<28}  {str(r.get('code', '')):<6}  {str(r.get('elapsed_ms', ''))}ms"
             print(line)
             # Print failure detail — shows what actually came back
             detail = str(r.get("detail", ""))
@@ -157,15 +159,18 @@ class Reporter:
         passed = sum(1 for r in self.results if r["status"] == "PASS")
         failed = sum(1 for r in self.results if r["status"] == "FAIL")
         skipped = sum(1 for r in self.results if r["status"] == "SKIP")
-        print(f"\n  {_c('PASS')}{passed} passed{_c('RESET')}  "
-              f"{_c('FAIL')}{failed} failed{_c('RESET')}  "
-              f"{_c('SKIP')}{skipped} skipped{_c('RESET')}  "
-              f"(total {passed+failed+skipped})")
+        print(
+            f"\n  {_c('PASS')}{passed} passed{_c('RESET')}  "
+            f"{_c('FAIL')}{failed} failed{_c('RESET')}  "
+            f"{_c('SKIP')}{skipped} skipped{_c('RESET')}  "
+            f"(total {passed + failed + skipped})"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def _run(base_url: str, check: dict[str, object], reporter: Reporter, timeout: int) -> None:
     name = str(check["name"])

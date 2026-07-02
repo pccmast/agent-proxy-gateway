@@ -11,18 +11,19 @@ Supports both non-streaming (JSON) and streaming (SSE) response forwarding.
 # inherently untyped. Full typing would require a custom Protocol or TypeVar chain
 # that adds complexity without runtime benefit.
 
+import asyncio
+import os
 from typing import Any
 
 import httpx
-import os
-import asyncio
 from fastapi import Request, Response
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from shared.config import GatewaySettings
 from shared.logging import get_logger
+
+from .middleware import BlockException, MiddlewareChain, RateLimitException
 from .sse import SSEInterceptor
-from .middleware import MiddlewareChain, BlockException, RateLimitException
 
 logger = get_logger()
 
@@ -88,6 +89,7 @@ class ProxyEngine:
         path = request.url.path
 
         from shared.models import RequestContext
+
         normalized_req = await adapter.normalize_request(raw_body, headers, path)
 
         # Get trace context from trace engine (if available)
@@ -120,9 +122,7 @@ class ProxyEngine:
                             trace_id=trace_id,
                             span_id=span_id,
                             status="blocked",
-                            guard_hits=[
-                                GuardHitRecord(rule_id=exc.rule_id, action="block")
-                            ],
+                            guard_hits=[GuardHitRecord(rule_id=exc.rule_id, action="block")],
                             request_body=raw_body,
                         )
                     )
@@ -183,19 +183,11 @@ class ProxyEngine:
             # but the upstream receives raw_body (the original request dict).
             # Without this step, PII is detected and logged but still leaks to
             # the upstream LLM.
-            if ctx.guard_results and any(
-                hasattr(g, "action") and str(g.action) == "redact"
-                for g in ctx.guard_results
-            ):
-                raw_body["messages"] = [
-                    {"role": m.role, "content": m.content}
-                    for m in ctx.request.messages
-                ]
+            if ctx.guard_results and any(hasattr(g, "action") and str(g.action) == "redact" for g in ctx.guard_results):
+                raw_body["messages"] = [{"role": m.role, "content": m.content} for m in ctx.request.messages]
 
             api_key = self._get_api_key(adapter.provider)
-            upstream_url = adapter.get_upstream_url(
-                path, self._get_base_url(adapter.provider)
-            )
+            upstream_url = adapter.get_upstream_url(path, self._get_base_url(adapter.provider))
             upstream_headers = adapter.get_upstream_headers(headers, api_key, self._get_base_url(adapter.provider))
 
             logger.info(
@@ -214,18 +206,14 @@ class ProxyEngine:
                 # forward+processing coroutine. Non-stream and stream paths are
                 # handled identically — wait_for wraps the entire forward.
                 remaining = (
-                    ctx.timeout_deadline - asyncio.get_running_loop().time()
-                    if ctx.timeout_deadline > 0
-                    else None
+                    ctx.timeout_deadline - asyncio.get_running_loop().time() if ctx.timeout_deadline > 0 else None
                 )
                 if remaining is not None and remaining <= 0:
-                    raise asyncio.TimeoutError()
+                    raise TimeoutError()
 
                 client = await self._get_client()
                 if normalized_req.stream:
-                    forward_coro = self._forward_stream(
-                        client, upstream_url, upstream_headers, raw_body, adapter, ctx
-                    )
+                    forward_coro = self._forward_stream(client, upstream_url, upstream_headers, raw_body, adapter, ctx)
                 else:
                     forward_coro = self._forward_non_stream(
                         client, upstream_url, upstream_headers, raw_body, adapter, ctx
@@ -279,7 +267,7 @@ class ProxyEngine:
                     content={"error": f"Cannot connect to upstream: {str(e)}"},
                 )
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Full-link timeout enforced by RequestTimeoutGuard (P3)
             remaining = 0.0
             if ctx.timeout_deadline > 0:
@@ -312,6 +300,7 @@ class ProxyEngine:
         except Exception as exc:
             # Catch-all: prevent orphan traces from unhandled exceptions
             import traceback as tb
+
             logger.error(
                 "unhandled_exception",
                 trace_id=trace_id,
@@ -364,6 +353,7 @@ class ProxyEngine:
                 self._record_cb_failure()
             if self.trace_engine and ctx.trace_id:
                 from shared.models import SpanFinishParams
+
                 await self.trace_engine.finish_span(
                     SpanFinishParams(
                         trace_id=ctx.trace_id,
@@ -390,6 +380,7 @@ class ProxyEngine:
         normalized_resp = adapter.normalize_response(raw_resp)
 
         from shared.models import ResponseContext
+
         resp_ctx = ResponseContext(
             trace_id=ctx.trace_id,
             span_id=ctx.span_id,
@@ -430,10 +421,7 @@ class ProxyEngine:
                         for g in resp_ctx.guard_results
                     ],
                     eval_scores=[
-                        EvalScoreRecord(
-                            name=r.name, score=r.score, details=r.details
-                        )
-                        for r in resp_ctx.eval_results
+                        EvalScoreRecord(name=r.name, score=r.score, details=r.details) for r in resp_ctx.eval_results
                     ],
                     request_body=ctx.request.raw_body if ctx.request else None,
                     response_body=normalized_resp.raw_body,
@@ -516,6 +504,7 @@ class ProxyEngine:
         """Update the circuit-breaker Prometheus gauge (no-op if prometheus not available)."""
         try:
             from gateway.metrics import circuit_breaker_state as cb_gauge
+
             # We don't have provider context here, use "default"
             cb_gauge.labels(provider="default").set(0)
         except Exception:
@@ -526,6 +515,7 @@ class ProxyEngine:
         """Record a circuit-breaker failure and update the Prometheus gauge."""
         try:
             from gateway.metrics import circuit_breaker_state as cb_gauge
+
             cb_gauge.labels(provider="default").set(1)
         except Exception:
             pass

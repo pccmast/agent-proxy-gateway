@@ -3,9 +3,9 @@
 Requires the gateway to be running at GATEWAY_API_URL.
 """
 
-import streamlit as st
-import pandas as pd
 import httpx
+import pandas as pd
+import streamlit as st
 
 from shared.constants import DEFAULT_GATEWAY_URL
 
@@ -31,14 +31,12 @@ try:
             st.metric("Active Rules", rules_data.get("count", 0))
         with col3:
             block_count = sum(
-                v.get("block", 0) if isinstance(v, dict) else 0
-                for v in stats_data.get("stats", {}).values()
+                v.get("block", 0) if isinstance(v, dict) else 0 for v in stats_data.get("stats", {}).values()
             )
             st.metric("Blocks", block_count)
         with col4:
             redact_count = sum(
-                v.get("redact", 0) if isinstance(v, dict) else 0
-                for v in stats_data.get("stats", {}).values()
+                v.get("redact", 0) if isinstance(v, dict) else 0 for v in stats_data.get("stats", {}).values()
             )
             st.metric("Redactions", redact_count)
 
@@ -52,9 +50,7 @@ try:
                     for k, v in stats_entries.items()
                 ]
             else:
-                chart_rows = [
-                    {"rule_id": k, "hits": v} for k, v in stats_entries.items()
-                ]
+                chart_rows = [{"rule_id": k, "hits": v} for k, v in stats_entries.items()]
             chart_data = pd.DataFrame(chart_rows)
             st.bar_chart(chart_data.set_index("rule_id"), use_container_width=True)
         else:
@@ -62,7 +58,11 @@ try:
 
         # --- Action Breakdown ---
         st.subheader("Action Breakdown")
-        action_data = {"Block": block_count, "Redact": redact_count, "Log": stats_data.get("total_hits", 0) - block_count - redact_count}
+        action_data = {
+            "Block": block_count,
+            "Redact": redact_count,
+            "Log": stats_data.get("total_hits", 0) - block_count - redact_count,
+        }
         if any(action_data.values()):
             action_df = pd.DataFrame({"Action": list(action_data.keys()), "Count": list(action_data.values())})
             st.bar_chart(action_df.set_index("Action"), use_container_width=True)
@@ -74,12 +74,14 @@ try:
             df = pd.DataFrame(rules)
             df["enabled"] = df["enabled"].apply(lambda x: "✅" if x else "⛔")
             st.dataframe(
-                df.rename(columns={
-                    "id": "Rule",
-                    "action": "Action",
-                    "confidence_threshold": "Confidence",
-                    "enabled": "Enabled",
-                }),
+                df.rename(
+                    columns={
+                        "id": "Rule",
+                        "action": "Action",
+                        "confidence_threshold": "Confidence",
+                        "enabled": "Enabled",
+                    }
+                ),
                 use_container_width=True,
                 hide_index=True,
             )

@@ -1,8 +1,7 @@
 """Eval dashboard page — quality score distribution."""
 
-import streamlit as st
-import pandas as pd
 import httpx
+import streamlit as st
 
 from shared.constants import DEFAULT_GATEWAY_URL
 
@@ -30,7 +29,9 @@ try:
         | coherence | LLM Judge | Logical structure quality |
         """)
 
-        st.info("Eval scores are recorded per-span. Use **Traces** page → select a trace → check `eval_scores` in span tree to view individual results.")
+        st.info(
+            "Eval scores are recorded per-span. Use **Traces** page → select a trace → check `eval_scores` in span tree to view individual results."
+        )
     else:
         st.warning(f"API returned {resp.status_code}")
 except Exception as e:

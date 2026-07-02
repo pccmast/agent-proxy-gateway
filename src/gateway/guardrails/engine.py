@@ -11,43 +11,50 @@ v2 — 四层 AI Safety Platform 引擎:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
-from gateway.proxy.middleware import Middleware, BlockException
+from gateway.proxy.middleware import BlockException, Middleware
+from shared.logging import get_logger
 from shared.models import (
-    GuardResult,
     GuardAction,
+    GuardResult,
     RequestContext,
     ResponseContext,
     StreamChunk,
     StreamContext,
 )
-from shared.logging import get_logger
 
-from .rules.base import BaseGuardRule
 from .action import apply_redact_to_messages, format_block_reason
+from .config import AuditEvent, RuleScope, SessionState
+from .rules.base import BaseGuardRule
 from .scope import ScopeMatcher
-from .config import RuleScope, SessionState, AuditEvent
 
 if TYPE_CHECKING:
-    from .session import SessionStore
     from .audit import AuditLogger
+    from .session import SessionStore
 
 logger = get_logger()
 
 # ── 按 phase 分类的 rule_type 列表 ──
 # 当 discover_rules 找不到某类型时，这些值作为 fallback
 INPUT_RULE_TYPES = {
-    "injection", "pii", "content", "content_safety",
-    "system_prompt_extraction", "topic_restriction",
+    "injection",
+    "pii",
+    "content",
+    "content_safety",
+    "system_prompt_extraction",
+    "topic_restriction",
     "credential_leak",
 }
 OUTPUT_RULE_TYPES = {
-    "system_prompt_leakage", "excessive_agency",
-    "output_format", "hallucination_indicator",
+    "system_prompt_leakage",
+    "excessive_agency",
+    "output_format",
+    "hallucination_indicator",
 }
 BEHAVIORAL_RULE_TYPES = {
-    "multi_turn_jailbreak", "tool_call_loop",
+    "multi_turn_jailbreak",
+    "tool_call_loop",
     "anomaly_detection",
 }
 
@@ -65,14 +72,14 @@ class GuardrailsEngine(Middleware):
     def __init__(
         self,
         rule_configs: list[dict[str, object]] | None = None,
-        session_store: "SessionStore | None" = None,
-        audit_logger: "AuditLogger | None" = None,
+        session_store: SessionStore | None = None,
+        audit_logger: AuditLogger | None = None,
     ) -> None:
         self._input_rules: list[BaseGuardRule] = []
         self._output_rules: list[BaseGuardRule] = []
         self._behavioral_rules: list[BaseGuardRule] = []
         self._hit_stats: dict[str, dict[str, int]] = {}  # rule_id → {"block":N, "redact":N, "log":N, "total":N}
-        self._category_stats: dict[str, int] = {}         # category → hit count (violence/self_harm/illegal/hate)
+        self._category_stats: dict[str, int] = {}  # category → hit count (violence/self_harm/illegal/hate)
         self._session_store = session_store
         self._audit_logger = audit_logger
 
@@ -82,10 +89,12 @@ class GuardrailsEngine(Middleware):
     # ------------------------------------------------------------------ factory
 
     @classmethod
-    def from_policy_store(cls, policy_store: object) -> "GuardrailsEngine":
+    def from_policy_store(cls, policy_store: object) -> GuardrailsEngine:
         """Build a GuardrailsEngine from a PolicyStore (backward compat)."""
         from typing import cast
+
         from gateway.policy.store import PolicyStore
+
         config = cast(PolicyStore, policy_store).guardrails_config()
         rule_dicts = [r.model_dump() for r in config.rules]
         return cls(rule_configs=[cast(dict[str, object], rd) for rd in rule_dicts])
@@ -252,9 +261,7 @@ class GuardrailsEngine(Middleware):
 
         return ctx
 
-    async def on_stream_chunk(
-        self, chunk: StreamChunk, ctx: StreamContext
-    ) -> StreamChunk | None:
+    async def on_stream_chunk(self, chunk: StreamChunk, ctx: StreamContext) -> StreamChunk | None:
         """流式 chunk 检查 — 仅 input_rules."""
         if not self._input_rules:
             return chunk
@@ -312,9 +319,7 @@ class GuardrailsEngine(Middleware):
             )
             raise BlockException(
                 rule_id=result.rule_id,
-                reason=format_block_reason(
-                    result.rule_id, result.matches, result.confidence
-                ),
+                reason=format_block_reason(result.rule_id, result.matches, result.confidence),
                 status_code=403,
             )
 
@@ -323,6 +328,7 @@ class GuardrailsEngine(Middleware):
                 apply_redact_to_messages(ctx.request.messages, result.matches)
             if isinstance(ctx, ResponseContext) and ctx.response.content:
                 from .action import apply_redact
+
                 new_content = apply_redact(ctx.response.content, result.matches)
                 ctx.response.content = new_content
 
@@ -348,6 +354,7 @@ class GuardrailsEngine(Middleware):
     ) -> None:
         """记录审计事件."""
         import uuid
+
         if self._audit_logger is None:
             return
         event = AuditEvent(
@@ -364,9 +371,7 @@ class GuardrailsEngine(Middleware):
     def _has_rules(self) -> bool:
         return bool(self._input_rules or self._output_rules or self._behavioral_rules)
 
-    def _get_session(
-        self, ctx: RequestContext | ResponseContext | StreamContext
-    ) -> SessionState | None:
+    def _get_session(self, ctx: RequestContext | ResponseContext | StreamContext) -> SessionState | None:
         """从 context 获取或创建 session state."""
         if self._session_store is None:
             return None
@@ -390,10 +395,7 @@ class GuardrailsEngine(Middleware):
         Returns:
             {rule_id: {"total": N, "block": N, "redact": N, "log": N}}
         """
-        return {
-            r.rule_id: self._hit_stats.get(r.rule_id, {"total": 0})
-            for r in self.rules
-        }
+        return {r.rule_id: self._hit_stats.get(r.rule_id, {"total": 0}) for r in self.rules}
 
     def get_category_stats(self) -> dict[str, int]:
         """Return content safety category hit counts.

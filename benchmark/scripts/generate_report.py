@@ -26,7 +26,7 @@ def _load_results(input_dir: str) -> list[dict[str, Any]]:
 
     for json_file in sorted(path.glob("*.json")):
         try:
-            with open(json_file, "r", encoding="utf-8") as f:
+            with open(json_file, encoding="utf-8") as f:
                 data = json.load(f)
                 data["_source_file"] = json_file.name
                 results.append(data)
@@ -107,9 +107,7 @@ def _generate_bottleneck_analysis(results: list[dict[str, Any]]) -> str:
             f"{baseline_p95}ms 上升到 {degradation_point['p95_ms']}ms，"
             f"增长了 {degradation_point['p95_ms'] / baseline_p95:.1f} 倍。\n"
         )
-        lines.append(
-            f"   这表明系统在 {degradation_point['concurrency']} 并发左右开始出现明显的性能瓶颈。\n\n"
-        )
+        lines.append(f"   这表明系统在 {degradation_point['concurrency']} 并发左右开始出现明显的性能瓶颈。\n\n")
     else:
         lines.append("1. **延迟退化点**: 在测试范围内未观察到明显的延迟退化点。\n\n")
 
@@ -144,16 +142,11 @@ def _generate_optimization_suggestions(results: list[dict[str, Any]]) -> str:
     lines = ["### 优化建议\n"]
 
     # Check if SQLite is likely the bottleneck
-    latency_data = [
-        r for data in results for r in data.get("results", [])
-        if "concurrency" in r and "p50_ms" in r
-    ]
+    latency_data = [r for data in results for r in data.get("results", []) if "concurrency" in r and "p50_ms" in r]
 
     if latency_data:
         max_concurrency = max(r.get("concurrency", 0) for r in latency_data)
-        high_concurrency_result = next(
-            (r for r in latency_data if r.get("concurrency") == max_concurrency), None
-        )
+        high_concurrency_result = next((r for r in latency_data if r.get("concurrency") == max_concurrency), None)
 
         if high_concurrency_result:
             p95 = high_concurrency_result.get("p95_ms", 0)
@@ -197,10 +190,7 @@ def _generate_interview_cheat_sheet(results: list[dict[str, Any]]) -> str:
     lines = ["### 面试速查表\n"]
 
     # Extract key numbers
-    latency_data = [
-        r for data in results for r in data.get("results", [])
-        if "concurrency" in r and "p50_ms" in r
-    ]
+    latency_data = [r for data in results for r in data.get("results", []) if "concurrency" in r and "p50_ms" in r]
 
     if latency_data:
         baseline = next((r for r in latency_data if r.get("concurrency") == 1), None)
@@ -226,31 +216,23 @@ def _generate_interview_cheat_sheet(results: list[dict[str, Any]]) -> str:
 
         lines.append("\n**峰值吞吐量**:\n")
         if peak:
-            lines.append(
-                f"- 最高 QPS: **{peak['qps']}** @ {peak['concurrency']} 并发\n"
-            )
+            lines.append(f"- 最高 QPS: **{peak['qps']}** @ {peak['concurrency']} 并发\n")
 
     # Streaming data
-    streaming_data = [
-        r for data in results for r in data.get("results", [])
-        if "ttft_p50_ms" in r
-    ]
+    streaming_data = [r for data in results for r in data.get("results", []) if "ttft_p50_ms" in r]
     if streaming_data:
         s = streaming_data[0]
         lines.append("\n**流式 TTFT**:\n")
-        lines.append(
-            f"- P50: **{s['ttft_p50_ms']} ms** | "
-            f"P95: **{s['ttft_p95_ms']} ms**\n"
-        )
+        lines.append(f"- P50: **{s['ttft_p50_ms']} ms** | P95: **{s['ttft_p95_ms']} ms**\n")
 
     lines.append("\n**面试话术模板**:\n")
     lines.append(
         '> "我用 mock 上游隔离了网络变量，测了网关自身的性能。'
-        '单请求 P50 是 **{p50}ms**，100 并发时 P95 上升到 **{p95}ms**，'
-        '主要瓶颈是 SQLite 写入锁竞争。优化路径是：先启用 WAL 模式提升 30% 性能，'
+        "单请求 P50 是 **{p50}ms**，100 并发时 P95 上升到 **{p95}ms**，"
+        "主要瓶颈是 SQLite 写入锁竞争。优化路径是：先启用 WAL 模式提升 30% 性能，"
         '长期迁移到 PostgreSQL。"\n\n'.format(
-            p50=baseline['p50_ms'] if baseline else "XX",
-            p95=high['p95_ms'] if high else "XX",
+            p50=baseline["p50_ms"] if baseline else "XX",
+            p95=high["p95_ms"] if high else "XX",
         )
     )
 

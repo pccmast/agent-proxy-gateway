@@ -7,7 +7,8 @@
 import re
 from typing import TYPE_CHECKING
 
-from shared.models import GuardResult, GuardAction
+from shared.models import GuardAction, GuardResult
+
 from .base import BaseGuardRule
 
 if TYPE_CHECKING:
@@ -54,9 +55,7 @@ class MultiTurnJailbreakRule(BaseGuardRule):
             self._signals = signals
         else:
             self._signals = _DEFAULT_ESCALATION_SIGNALS
-        self._threshold: float = float(
-            self._config.get("escalation_threshold", 0.8)
-        )
+        self._threshold: float = float(self._config.get("escalation_threshold", 0.8))
         self._max_history: int = int(self._config.get("max_history_turns", 20))
 
         # 预编译每个 signal 的 patterns
@@ -64,36 +63,30 @@ class MultiTurnJailbreakRule(BaseGuardRule):
         for sig in self._signals:
             patterns = sig.get("patterns", [])
             if isinstance(patterns, list):
-                compiled_patterns = [
-                    re.compile(str(p), re.IGNORECASE) for p in patterns
-                ]
+                compiled_patterns = [re.compile(str(p), re.IGNORECASE) for p in patterns]
             else:
                 compiled_patterns = []
-            self._compiled_signals.append({
-                "type": sig.get("type", ""),
-                "weight": float(sig.get("weight", 0.3)),
-                "patterns": compiled_patterns,
-            })
+            self._compiled_signals.append(
+                {
+                    "type": sig.get("type", ""),
+                    "weight": float(sig.get("weight", 0.3)),
+                    "patterns": compiled_patterns,
+                }
+            )
 
-    async def check_input(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_input(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, session, phase="input")
 
-    async def check_output(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_output(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return GuardResult(rule_id=self.rule_id, action=self.action)
 
-    def _check(
-        self, text: str, session: "SessionState | None", phase: str
-    ) -> GuardResult:
+    def _check(self, text: str, session: "SessionState | None", phase: str) -> GuardResult:
         if not text or session is None:
             return GuardResult(rule_id=self.rule_id, action=self.action)
 
         # 裁剪历史
         if len(session.history) > self._max_history:
-            session.history = session.history[-self._max_history:]
+            session.history = session.history[-self._max_history :]
 
         # 累加本轮命中信号的权重
         text_lower = text.lower()
@@ -124,6 +117,6 @@ class MultiTurnJailbreakRule(BaseGuardRule):
             confidence=min(session.escalation_score, 1.0),
             details=(
                 f"[{phase}] escalation_score={session.escalation_score:.2f}"
-                + (f" — THRESHOLD EXCEEDED" if triggered else "")
+                + (" — THRESHOLD EXCEEDED" if triggered else "")
             ),
         )

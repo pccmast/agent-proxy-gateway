@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gateway.main import create_app
-from shared.constants import DEFAULT_GATEWAY_PORT, DEFAULT_GATEWAY_URL
+from shared.constants import DEFAULT_GATEWAY_PORT
 
 
 @pytest.fixture
@@ -132,17 +132,16 @@ class TestPortConsistency:
 
     def test_default_port_is_high(self):
         """Default port should be in the ephemeral/high range to avoid conflicts."""
-        assert DEFAULT_GATEWAY_PORT >= 1024, (
-            f"DEFAULT_GATEWAY_PORT ({DEFAULT_GATEWAY_PORT}) should be >= 1024"
-        )
+        assert DEFAULT_GATEWAY_PORT >= 1024, f"DEFAULT_GATEWAY_PORT ({DEFAULT_GATEWAY_PORT}) should be >= 1024"
 
     def test_yaml_config_matches_default(self):
         """config/default.yaml port should match the code default."""
-        import yaml
         from pathlib import Path
 
+        import yaml
+
         config_path = Path(__file__).parent.parent / "config" / "default.yaml"
-        with open(config_path, "r", encoding="utf-8") as f:
+        with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
         yaml_port = config.get("proxy", {}).get("port")

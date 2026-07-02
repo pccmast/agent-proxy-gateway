@@ -1,6 +1,7 @@
 """Unit tests for model pricing logic."""
 
 import pytest
+
 from gateway.trace.pricing import estimate_cost
 
 

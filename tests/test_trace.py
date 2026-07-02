@@ -16,10 +16,10 @@ from shared.models import (
     TraceSpan,
 )
 
-
 # ==========================================================================
 # TestTraceStore — 存储层测试
 # ==========================================================================
+
 
 class TestTraceStore:
     """Tests for SQLite-backed TraceStore (v2 schema)."""
@@ -106,7 +106,15 @@ class TestTraceStore:
             token_usage=TokenUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
             latency_ms=200.5,
             guard_hits_json=json.dumps(
-                [{"rule_id": "injection-detection", "action": "block", "matches": [], "confidence": 0.95, "details": ""}],
+                [
+                    {
+                        "rule_id": "injection-detection",
+                        "action": "block",
+                        "matches": [],
+                        "confidence": 0.95,
+                        "details": "",
+                    }
+                ],
                 ensure_ascii=False,
             ),
             eval_scores_json=json.dumps(
@@ -364,6 +372,7 @@ class TestTraceStore:
 # TestSpanTree — 树层测试
 # ==========================================================================
 
+
 class TestSpanTree:
     """Tests for SpanTree builder (v2)."""
 
@@ -454,9 +463,7 @@ class TestSpanTree:
                 "guard_hits_json": json.dumps(
                     [{"rule_id": "pii-detection", "action": "block", "matches": [], "confidence": 0.9, "details": ""}]
                 ),
-                "eval_scores_json": json.dumps(
-                    [{"name": "relevance", "score": 0.9, "details": ""}]
-                ),
+                "eval_scores_json": json.dumps([{"name": "relevance", "score": 0.9, "details": ""}]),
                 "created_at": "2024-01-01T00:00:00",
             }
         ]
@@ -535,7 +542,13 @@ class TestSpanTree:
                 "latency_ms": 0,
                 "guard_hits_json": json.dumps(
                     [
-                        {"rule_id": "pii", "action": "block", "matches": ["138****"], "confidence": 0.95, "details": "phone number detected"},
+                        {
+                            "rule_id": "pii",
+                            "action": "block",
+                            "matches": ["138****"],
+                            "confidence": 0.95,
+                            "details": "phone number detected",
+                        },
                     ]
                 ),
                 "eval_scores_json": "[]",
@@ -621,6 +634,7 @@ class TestSpanTree:
 # TestTraceEngine — 引擎层测试
 # ==========================================================================
 
+
 class TestTraceEngine:
     """Tests for TraceEngine lifecycle (v2)."""
 
@@ -634,13 +648,15 @@ class TestTraceEngine:
     @pytest.fixture
     async def engine(self, store):
         from gateway.trace.engine import TraceEngine
+
         return TraceEngine(store)
 
     @pytest.mark.asyncio
     async def test_start_span_with_new_params(self, engine, store):
         """start_span with SpanStartParams including is_stream / temperature"""
-        from fastapi import Request
         from unittest.mock import AsyncMock
+
+        from fastapi import Request
 
         mock_req = AsyncMock(spec=Request)
         mock_req.headers = {"X-Agent-ID": "agent1", "X-Session-ID": "sess1"}
@@ -671,8 +687,9 @@ class TestTraceEngine:
     @pytest.mark.asyncio
     async def test_finish_span_content_routing_small(self, engine, store):
         """finish_span 含 ≤4KB request_body → 内联存储"""
-        from fastapi import Request
         from unittest.mock import AsyncMock
+
+        from fastapi import Request
 
         mock_req = AsyncMock(spec=Request)
         mock_req.headers = {}
@@ -701,8 +718,9 @@ class TestTraceEngine:
     @pytest.mark.asyncio
     async def test_finish_span_content_routing_large(self, engine, store):
         """finish_span 含 >4KB request_body → span_contents 存储"""
-        from fastapi import Request
         from unittest.mock import AsyncMock
+
+        from fastapi import Request
 
         mock_req = AsyncMock(spec=Request)
         mock_req.headers = {}
@@ -732,8 +750,9 @@ class TestTraceEngine:
     @pytest.mark.asyncio
     async def test_finish_span_with_guard_hit_records(self, engine, store):
         """finish_span 传入 GuardHitRecord 列表"""
-        from fastapi import Request
         from unittest.mock import AsyncMock
+
+        from fastapi import Request
 
         mock_req = AsyncMock(spec=Request)
         mock_req.headers = {}
@@ -748,7 +767,9 @@ class TestTraceEngine:
                 span_id=span_id,
                 status="blocked",
                 guard_hits=[
-                    GuardHitRecord(rule_id="pii", action="block", matches=["138****"], confidence=0.95, details="phone"),
+                    GuardHitRecord(
+                        rule_id="pii", action="block", matches=["138****"], confidence=0.95, details="phone"
+                    ),
                 ],
             )
         )
@@ -762,8 +783,9 @@ class TestTraceEngine:
     @pytest.mark.asyncio
     async def test_finish_span_with_eval_score_records(self, engine, store):
         """finish_span 传入 EvalScoreRecord 列表"""
-        from fastapi import Request
         from unittest.mock import AsyncMock
+
+        from fastapi import Request
 
         mock_req = AsyncMock(spec=Request)
         mock_req.headers = {}
@@ -791,8 +813,9 @@ class TestTraceEngine:
     @pytest.mark.asyncio
     async def test_finish_span_error_with_message(self, engine, store):
         """status=error 时 error_message 正确持久化"""
-        from fastapi import Request
         from unittest.mock import AsyncMock
+
+        from fastapi import Request
 
         mock_req = AsyncMock(spec=Request)
         mock_req.headers = {}
@@ -817,8 +840,9 @@ class TestTraceEngine:
     @pytest.mark.asyncio
     async def test_trace_level_cost_aggregation(self, engine, store):
         """多个 span 的 estimated_cost_usd 正确聚合到 trace"""
-        from fastapi import Request
         from unittest.mock import AsyncMock
+
+        from fastapi import Request
 
         mock_req = AsyncMock(spec=Request)
         mock_req.headers = {}
@@ -864,8 +888,9 @@ class TestTraceEngine:
     @pytest.mark.asyncio
     async def test_start_trace_extracts_client_info(self, engine, store):
         """start_trace 从 Request 提取 session_id / client_ip / user_agent"""
-        from fastapi import Request
         from unittest.mock import AsyncMock, MagicMock
+
+        from fastapi import Request
 
         mock_client = MagicMock()
         mock_client.host = "10.0.0.1"

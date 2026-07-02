@@ -9,8 +9,8 @@ from collections import deque
 from dataclasses import dataclass, field
 
 from gateway.proxy.middleware import Middleware, RateLimitException
-from shared.models import RequestContext, ResponseContext
 from shared.logging import get_logger
+from shared.models import RequestContext, ResponseContext
 
 logger = get_logger()
 
@@ -18,13 +18,15 @@ logger = get_logger()
 @dataclass
 class RateLimitConfig:
     """Per-scope rate limit settings."""
-    rpm: int = 60       # requests per minute
+
+    rpm: int = 60  # requests per minute
     tpm: int = 100_000  # tokens per minute
 
 
 @dataclass
 class _WindowState:
     """Internal sliding-window state for one scope (agent or model)."""
+
     requests: deque[float] = field(default_factory=deque)
     tokens: deque[tuple[float, int]] = field(default_factory=deque)
 

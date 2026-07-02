@@ -5,8 +5,7 @@
 """
 
 import threading
-import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .config import SessionState
 
@@ -58,7 +57,7 @@ class SessionStore:
                 self._sessions[session_id] = state
                 self._maybe_evict_lru()
             else:
-                state.last_activity = datetime.now(timezone.utc)
+                state.last_activity = datetime.now(UTC)
             return state
 
     def get(self, session_id: str) -> SessionState | None:
@@ -81,7 +80,7 @@ class SessionStore:
 
         Postcondition: 返回被驱逐的 session 数量。
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expired_ids: list[str] = []
         with self._lock:
             for sid, state in self._sessions.items():

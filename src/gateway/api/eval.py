@@ -15,7 +15,11 @@ def create_eval_router(eval_pipeline: Any = None) -> APIRouter:
         return {
             "metrics": [
                 {"name": "response_length", "type": "heuristic", "description": "Response length quality (0-1)"},
-                {"name": "repetition", "type": "heuristic", "description": "Content repetition score (0-1, 1=no repetition)"},
+                {
+                    "name": "repetition",
+                    "type": "heuristic",
+                    "description": "Content repetition score (0-1, 1=no repetition)",
+                },
                 {"name": "latency", "type": "heuristic", "description": "Response latency score (0-1)"},
                 {"name": "tool_call", "type": "heuristic", "description": "Tool call quality score (0-1)"},
                 {"name": "relevance", "type": "llm_judge", "description": "LLM-judged relevance (0-1)"},

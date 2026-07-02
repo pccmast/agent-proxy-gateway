@@ -1,6 +1,7 @@
 """Structured logging for the gateway."""
 
 import logging
+
 import structlog
 
 

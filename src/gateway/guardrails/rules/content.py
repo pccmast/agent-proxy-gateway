@@ -3,7 +3,8 @@
 import re
 from typing import TYPE_CHECKING
 
-from shared.models import GuardResult, GuardAction
+from shared.models import GuardAction, GuardResult
+
 from .base import BaseGuardRule
 
 if TYPE_CHECKING:
@@ -24,22 +25,43 @@ if TYPE_CHECKING:
 _DEFAULT_KEYWORDS: dict[str, list[str]] = {
     # ── violence ──
     "violence": [
-        "murder", "massacre", "torture", "slaughter", "assassinate", "maim",
-        "kill", "bomb", "shoot", "stab",
+        "murder",
+        "massacre",
+        "torture",
+        "slaughter",
+        "assassinate",
+        "maim",
+        "kill",
+        "bomb",
+        "shoot",
+        "stab",
     ],
     # ── self-harm ──
     "self_harm": [
-        "suicide", "kill myself", "end my life", "self-harm", "self harm",
-        "cut myself", "hurt myself",
+        "suicide",
+        "kill myself",
+        "end my life",
+        "self-harm",
+        "self harm",
+        "cut myself",
+        "hurt myself",
     ],
     # ── illegal activities ──
     "illegal": [
-        "fraud", "smuggle", "ransomware", "phishing",
-        "money laundering", "counterfeit", "hacking",
+        "fraud",
+        "smuggle",
+        "ransomware",
+        "phishing",
+        "money laundering",
+        "counterfeit",
+        "hacking",
     ],
     # ── hate speech ──
     "hate": [
-        "hate speech", "racial slur", "discrimination", "supremacist",
+        "hate speech",
+        "racial slur",
+        "discrimination",
+        "supremacist",
         "extremist",
     ],
 }

@@ -4,7 +4,8 @@ import json
 import re
 from typing import TYPE_CHECKING
 
-from shared.models import GuardResult, GuardAction
+from shared.models import GuardAction, GuardResult
+
 from .base import BaseGuardRule
 
 if TYPE_CHECKING:
@@ -14,6 +15,7 @@ if TYPE_CHECKING:
 # ============================================================================
 # ExcessiveAgencyRule — 输出侧：限制 Agent 的工具调用范围
 # ============================================================================
+
 
 class ExcessiveAgencyRule(BaseGuardRule):
     """限制 Agent 的工具调用范围，防止越权操作（OWASP LLM06）。
@@ -43,14 +45,10 @@ class ExcessiveAgencyRule(BaseGuardRule):
                     if field and isinstance(denies, list):
                         self._param_rules.append((field, [str(d) for d in denies]))
 
-    async def check_input(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_input(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return GuardResult(rule_id=self.rule_id, action=self.action)
 
-    async def check_output(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_output(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, phase="output")
 
     def _check(self, text: str, phase: str) -> GuardResult:
@@ -106,10 +104,12 @@ class ExcessiveAgencyRule(BaseGuardRule):
                     for item in parsed:
                         if isinstance(item, dict) and "function" in item:
                             func = item["function"]
-                            results.append({
-                                "name": func.get("name", ""),
-                                "arguments": func.get("arguments", {}),
-                            })
+                            results.append(
+                                {
+                                    "name": func.get("name", ""),
+                                    "arguments": func.get("arguments", {}),
+                                }
+                            )
             except (json.JSONDecodeError, TypeError):
                 continue
 
@@ -124,6 +124,7 @@ class ExcessiveAgencyRule(BaseGuardRule):
 # ============================================================================
 # ToolCallLoopRule — 输出侧：检测工具调用死循环
 # ============================================================================
+
 
 class ToolCallLoopRule(BaseGuardRule):
     """检测 Agent 是否陷入工具调用死循环（OWASP 资源滥用）。
@@ -141,19 +142,13 @@ class ToolCallLoopRule(BaseGuardRule):
         self._max_cycle_length: int = int(self._config.get("max_cycle_length", 4))
         self._max_total_calls: int = int(self._config.get("max_total_tool_calls", 50))
 
-    async def check_input(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_input(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return GuardResult(rule_id=self.rule_id, action=self.action)
 
-    async def check_output(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_output(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, session, phase="output")
 
-    def _check(
-        self, text: str, session: "SessionState | None", phase: str
-    ) -> GuardResult:
+    def _check(self, text: str, session: "SessionState | None", phase: str) -> GuardResult:
         if session is None:
             return GuardResult(rule_id=self.rule_id, action=self.action)
 
@@ -179,9 +174,7 @@ class ToolCallLoopRule(BaseGuardRule):
                 session.consecutive_same_tool = 1
 
             # 追加当前调用到历史（在检测之后）
-            session.tool_call_history.append(
-                {"name": tool_name, "arguments": tc.get("arguments", {})}
-            )
+            session.tool_call_history.append({"name": tool_name, "arguments": tc.get("arguments", {})})
             session.total_tool_calls += 1
 
             if session.consecutive_same_tool >= self._max_consecutive:

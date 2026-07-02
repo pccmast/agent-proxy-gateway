@@ -40,7 +40,7 @@ class RequestTimeoutGuard(Middleware):
 
     def __init__(self, total_timeout_seconds: float = 60.0) -> None:
         """Args:
-            total_timeout_seconds: 端到端超时（秒），默认 60s。
+        total_timeout_seconds: 端到端超时（秒），默认 60s。
         """
         self._timeout = total_timeout_seconds
 

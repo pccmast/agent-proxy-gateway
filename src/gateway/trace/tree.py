@@ -6,6 +6,7 @@ and optional span_contents loading.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # TypedDict: 从 SQLite 读出的 span 行格式
 # ---------------------------------------------------------------------------
+
 
 class _SpanRowBase(TypedDict):
     """Required fields — every span must have at least a span_id."""
@@ -67,6 +69,7 @@ class _SpanRow(_SpanRowBase, total=False):
 # SpanNode
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SpanNode:
     """A node in the span tree, enriched with computed statistics (v2)."""
@@ -97,8 +100,8 @@ class SpanNode:
     request_summary: str | None = None
     response_summary: str | None = None
     content_id: str | None = None
-    request_body: str | None = None       # 从 span_contents 加载的 JSON 字符串
-    response_body: str | None = None      # 从 span_contents 加载的 JSON 字符串
+    request_body: str | None = None  # 从 span_contents 加载的 JSON 字符串
+    response_body: str | None = None  # 从 span_contents 加载的 JSON 字符串
 
     # ── P1 成本与性能 ──
     is_stream: bool = False
@@ -123,6 +126,7 @@ class SpanNode:
 # SpanTree
 # ---------------------------------------------------------------------------
 
+
 class SpanTree:
     """Build a tree of spans from flat span records and compute statistics.
 
@@ -134,14 +138,14 @@ class SpanTree:
 
     def __init__(
         self,
-        spans: "Iterable[Mapping[str, object]]",
+        spans: Iterable[Mapping[str, object]],
     ) -> None:
         # Cast through `object` to satisfy strict type checker.
         self._spans: list[_SpanRow] = [cast(_SpanRow, cast(object, s)) for s in spans]
 
     async def build(
         self,
-        store: "TraceStore | None" = None,
+        store: TraceStore | None = None,
     ) -> SpanNode | None:
         """Build the span tree and return the root node.
 
@@ -152,7 +156,6 @@ class SpanTree:
         Returns:
             Root SpanNode or None if spans list is empty.
         """
-        import asyncio
 
         if not self._spans:
             return None
@@ -180,8 +183,7 @@ class SpanTree:
                 latency_ms=float(span.get("latency_ms", 0)),
                 prompt_tokens=int(span.get("prompt_tokens", 0)),
                 completion_tokens=int(span.get("completion_tokens", 0)),
-                total_tokens=int(span.get("prompt_tokens", 0))
-                + int(span.get("completion_tokens", 0)),
+                total_tokens=int(span.get("prompt_tokens", 0)) + int(span.get("completion_tokens", 0)),
                 created_at=str(span.get("created_at", "")),
                 # 结构化记录
                 guard_hits=guard_hits,
@@ -190,10 +192,7 @@ class SpanTree:
                 # P0
                 finish_reason=span.get("finish_reason"),
                 error_message=span.get("error_message"),
-                temperature=(
-                    float(t) if (t := span.get("temperature")) is not None
-                    else None
-                ),
+                temperature=(float(t) if (t := span.get("temperature")) is not None else None),
                 max_tokens=span.get("max_tokens"),
                 request_summary=span.get("request_summary"),
                 response_summary=span.get("response_summary"),
@@ -239,7 +238,7 @@ class SpanTree:
         self,
         nodes: dict[str, SpanNode],
         content_ids: list[str],
-        store: "TraceStore",
+        store: TraceStore,
     ) -> None:
         """Asynchronously load span_contents for given content_ids.
 
@@ -247,9 +246,7 @@ class SpanTree:
         """
         from collections.abc import Awaitable
 
-        tasks: list[Awaitable[object]] = [
-            store.get_span_content(cid) for cid in content_ids
-        ]
+        tasks: list[Awaitable[object]] = [store.get_span_content(cid) for cid in content_ids]
         results = await asyncio.gather(*tasks)
 
         for cid, result in zip(content_ids, results):
@@ -308,8 +305,7 @@ class SpanTree:
                 # 旧格式遗留在新字段中: list[str] → 创建最小 GuardHitRecord
                 if isinstance(parsed[0], str):
                     return [
-                        GuardHitRecord(rule_id=r, action="", matches=[], confidence=0.0, details="")
-                        for r in parsed
+                        GuardHitRecord(rule_id=r, action="", matches=[], confidence=0.0, details="") for r in parsed
                     ]
 
         # Fallback: 旧字段 guard_hits
@@ -390,9 +386,7 @@ class SpanTree:
             return []
         if isinstance(raw_old, dict):
             return [
-                EvalScoreRecord(name=k, score=v, details="")
-                for k, v in raw_old.items()
-                if isinstance(v, (int, float))
+                EvalScoreRecord(name=k, score=v, details="") for k, v in raw_old.items() if isinstance(v, (int, float))
             ]
         return []
 
@@ -492,16 +486,8 @@ class SpanTree:
             "request_summary": node.request_summary,
             "response_summary": node.response_summary,
             "content_id": node.content_id,
-            "request_body": (
-                _truncate_large(node.request_body, 10240)
-                if node.request_body
-                else None
-            ),
-            "response_body": (
-                _truncate_large(node.response_body, 20480)
-                if node.response_body
-                else None
-            ),
+            "request_body": (_truncate_large(node.request_body, 10240) if node.request_body else None),
+            "response_body": (_truncate_large(node.response_body, 20480) if node.response_body else None),
             # P1
             "is_stream": node.is_stream,
             "ttft_ms": node.ttft_ms,

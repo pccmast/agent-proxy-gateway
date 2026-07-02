@@ -7,7 +7,7 @@ Schema v2 — extended per TRACE_REFACTOR_PLAN.md with P0-P3 fields + span_conte
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
@@ -191,9 +191,7 @@ class TraceStore:
         对于每个目标列，先查询 PRAGMA table_info 确认列不存在再执行。
         """
         for table_name, column_name, type_suffix in MIGRATIONS_SQL:
-            async with self.db.execute(
-                f"PRAGMA table_info({table_name})"
-            ) as cursor:
+            async with self.db.execute(f"PRAGMA table_info({table_name})") as cursor:
                 rows = await cursor.fetchall()
                 existing_columns = {row[1] for row in rows}
 
@@ -201,9 +199,7 @@ class TraceStore:
                 continue  # 列已存在，跳过
 
             try:
-                await self.db.execute(
-                    f"ALTER TABLE {table_name} ADD COLUMN {column_name} {type_suffix}"
-                )
+                await self.db.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {type_suffix}")
                 logger.debug(
                     "migration_added_column",
                     table=table_name,
@@ -265,7 +261,7 @@ class TraceStore:
                 session_id,
                 client_ip,
                 user_agent,
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now(UTC).isoformat(),
             ),
         )
         await self.db.commit()
@@ -276,9 +272,7 @@ class TraceStore:
         Raises:
             aiosqlite.Error
         """
-        async with self.db.execute(
-            "SELECT * FROM traces WHERE trace_id = ?", (trace_id,)
-        ) as cursor:
+        async with self.db.execute("SELECT * FROM traces WHERE trace_id = ?", (trace_id,)) as cursor:
             row = await cursor.fetchone()
             return dict(row) if row else None
 
@@ -545,9 +539,7 @@ class TraceStore:
         Raises:
             aiosqlite.Error
         """
-        async with self.db.execute(
-            "SELECT * FROM spans WHERE span_id = ?", (span_id,)
-        ) as cursor:
+        async with self.db.execute("SELECT * FROM spans WHERE span_id = ?", (span_id,)) as cursor:
             row = await cursor.fetchone()
             return dict(row) if row else None
 
@@ -576,14 +568,12 @@ class TraceStore:
                 span_id,
                 request_body,
                 response_body,
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now(UTC).isoformat(),
             ),
         )
         await self.db.commit()
 
-    async def get_span_content(
-        self, content_id: str
-    ) -> dict[str, object] | None:
+    async def get_span_content(self, content_id: str) -> dict[str, object] | None:
         """按主键查询大体积内容。
 
         Raises:
@@ -607,7 +597,7 @@ class TraceStore:
         Raises:
             aiosqlite.Error
         """
-        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+        since = datetime.now(UTC) - timedelta(hours=hours)
         since_iso = since.isoformat()
 
         async with self.db.execute(
@@ -663,7 +653,7 @@ class TraceStore:
                 "total_spans": int,
             }
         """
-        since_iso = datetime.now(timezone.utc).isoformat()
+        since_iso = datetime.now(UTC).isoformat()
 
         # ── TTFT 分布 ──
         async with self.db.execute(
@@ -681,9 +671,7 @@ class TraceStore:
             (since_iso,),
         ) as cursor:
             tps_rows = await cursor.fetchall()
-        tps_values = sorted(
-            float(r[0]) / (float(r[1]) / 1000.0) for r in tps_rows if float(r[1]) > 0
-        )
+        tps_values = sorted(float(r[0]) / (float(r[1]) / 1000.0) for r in tps_rows if float(r[1]) > 0)
         tps = self._calc_percentiles(tps_values)
 
         # ── 空响应率 ──
@@ -790,7 +778,7 @@ class TraceStore:
         Returns:
             span 记录列表（含关联的 request_body/response_body）。
         """
-        since_iso = datetime.now(timezone.utc).isoformat()
+        since_iso = datetime.now(UTC).isoformat()
         conditions = ["s.created_at >= ?"]
         params: list[object] = [since_iso]
 
@@ -805,9 +793,7 @@ class TraceStore:
                 conditions.append("s.latency_ms >= ?")
                 params.append(float(cast(float, filters["min_latency_ms"])))
             if filters.get("has_guard_hits"):
-                conditions.append(
-                    "(s.guard_hits_json IS NOT NULL AND s.guard_hits_json != '[]')"
-                )
+                conditions.append("(s.guard_hits_json IS NOT NULL AND s.guard_hits_json != '[]')")
             if filters.get("has_low_eval"):
                 conditions.append(
                     "(s.eval_scores_json IS NOT NULL AND s.eval_scores_json != '{}' AND s.eval_scores_json != '[]')"
@@ -825,10 +811,7 @@ class TraceStore:
         results = [dict(r) for r in rows]
 
         # 关联加载 span_contents
-        content_ids = [
-            cid for r in results
-            if (cid := r.get("content_id")) and isinstance(cid, str) and cid
-        ]
+        content_ids = [cid for r in results if (cid := r.get("content_id")) and isinstance(cid, str) and cid]
         if content_ids:
             content_map: dict[str, dict[str, object]] = {}
             for cid in content_ids:
@@ -857,13 +840,11 @@ class TraceStore:
         Returns:
             被标记的 span 数量。
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=abandoned_minutes)
+        cutoff = datetime.now(UTC) - timedelta(minutes=abandoned_minutes)
         cutoff_iso = cutoff.isoformat()
 
         cursor = await self.db.execute(
-            "UPDATE spans SET status = 'abandoned' "
-            "WHERE status = 'ok' AND latency_ms = 0 "
-            "AND created_at < ?",
+            "UPDATE spans SET status = 'abandoned' WHERE status = 'ok' AND latency_ms = 0 AND created_at < ?",
             (cutoff_iso,),
         )
         await self.db.commit()

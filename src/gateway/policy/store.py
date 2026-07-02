@@ -5,14 +5,14 @@ and optionally watches files for changes.
 """
 
 import threading
-import time
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from shared.logging import get_logger
-from .loader import GatewayPolicy, GuardrailsConfig, BudgetConfig, RateLimitConfig, EvalConfig
+
+from .loader import BudgetConfig, EvalConfig, GatewayPolicy, GuardrailsConfig, RateLimitConfig
 
 logger = get_logger()
 
@@ -66,7 +66,7 @@ class PolicyStore:
 
         for path in yaml_files:
             try:
-                with open(path, "r", encoding="utf-8") as fh:
+                with open(path, encoding="utf-8") as fh:
                     data = yaml.safe_load(fh)
                 if isinstance(data, dict):
                     raw.update(data)  # shallow merge — top-level keys from later files win

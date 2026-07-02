@@ -1,6 +1,6 @@
 """AdapterRegistry — select and manage protocol adapters."""
 
-from .base import ProtocolAdapter, AdapterRegistry
+from .base import AdapterRegistry, ProtocolAdapter
 
 # Re-export for convenience
 __all__ = ["AdapterRegistry", "ProtocolAdapter", "create_registry"]
@@ -11,8 +11,8 @@ def create_registry() -> AdapterRegistry:
     registry = AdapterRegistry()
 
     # Import adapters lazily to avoid circular imports
-    from .openai import OpenAIAdapter
     from .anthropic import AnthropicAdapter
+    from .openai import OpenAIAdapter
 
     registry.register(OpenAIAdapter())
     registry.register(AnthropicAdapter())

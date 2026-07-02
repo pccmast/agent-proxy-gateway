@@ -24,14 +24,12 @@ Results are logged and can be written back to the trace span.
    ``eval.llm_judge.enabled: true`` and provide ``EVAL_LLM_API_KEY``.
 """
 
-import asyncio
 import json
-from typing import Any
 
 import httpx
 
-from shared.models import NormalizedRequest, NormalizedResponse, EvalMetrics
 from shared.logging import get_logger
+from shared.models import EvalMetrics, NormalizedRequest, NormalizedResponse
 
 logger = get_logger()
 
@@ -129,6 +127,7 @@ class LLMJudgeEvaluator:
                 try:
                     # Find JSON object in response
                     import re
+
                     match = re.search(r"\{[^{}]*\}", content, re.DOTALL)
                     if match:
                         scores = json.loads(match.group())

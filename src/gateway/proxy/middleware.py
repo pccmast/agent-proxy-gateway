@@ -1,10 +1,9 @@
 """Middleware base class + MiddlewareChain — the contract and execution engine for gateway middleware."""
 
 from abc import ABC, abstractmethod
-from typing import Callable
 
-from shared.models import RequestContext, ResponseContext, StreamChunk, StreamContext
 from shared.logging import get_logger
+from shared.models import RequestContext, ResponseContext, StreamChunk, StreamContext
 
 logger = get_logger()
 

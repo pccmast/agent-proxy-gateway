@@ -2,7 +2,9 @@
 
 from abc import ABC, abstractmethod
 from typing import Any
+
 from fastapi import Request
+
 from shared.models import NormalizedRequest, NormalizedResponse, StreamChunk
 
 
@@ -24,7 +26,9 @@ class ProtocolAdapter(ABC):
         ...
 
     @abstractmethod
-    async def normalize_request(self, raw_body: dict[str, Any], headers: dict[str, str], path: str) -> NormalizedRequest:
+    async def normalize_request(
+        self, raw_body: dict[str, Any], headers: dict[str, str], path: str
+    ) -> NormalizedRequest:
         """Convert provider-specific request to NormalizedRequest."""
         ...
 

@@ -90,7 +90,7 @@ def load_config(config_dir: str | None = None) -> GatewaySettings:
     if cfg_path.exists():
         for yaml_file in sorted(cfg_path.glob("*.yaml")):
             try:
-                with open(yaml_file, "r", encoding="utf-8") as fh:
+                with open(yaml_file, encoding="utf-8") as fh:
                     data = yaml.safe_load(fh)
                 if isinstance(data, dict) and "proxy" in data:
                     proxy = data["proxy"]

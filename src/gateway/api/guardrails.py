@@ -33,12 +33,14 @@ def create_guardrails_router(
         """List all active guardrail rules with their current state."""
         rules = []
         for rule in guardrails_engine.rules:
-            rules.append({
-                "id": rule.rule_id,
-                "action": rule.action.value if hasattr(rule.action, "value") else str(rule.action),
-                "confidence_threshold": rule.confidence_threshold,
-                "enabled": rule.enabled,
-            })
+            rules.append(
+                {
+                    "id": rule.rule_id,
+                    "action": rule.action.value if hasattr(rule.action, "value") else str(rule.action),
+                    "confidence_threshold": rule.confidence_threshold,
+                    "enabled": rule.enabled,
+                }
+            )
         return {"rules": rules, "count": len(rules)}
 
     @router.post("/rules/{rule_id}/toggle")

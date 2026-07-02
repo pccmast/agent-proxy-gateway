@@ -3,9 +3,9 @@
 Requires the gateway to be running at GATEWAY_API_URL.
 """
 
-import streamlit as st
-import pandas as pd
 import httpx
+import pandas as pd
+import streamlit as st
 
 from shared.constants import DEFAULT_GATEWAY_URL
 

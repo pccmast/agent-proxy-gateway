@@ -4,13 +4,12 @@ Usage:
     python benchmark/scripts/launcher.py
 """
 
+import os
 import subprocess
 import sys
 import time
-import urllib.request
 import urllib.error
-import signal
-import os
+import urllib.request
 from pathlib import Path
 
 
@@ -51,7 +50,12 @@ def main() -> int:
         stderr=subprocess.DEVNULL,
     )
     print(f"  Mock server PID: {mock_proc.pid}")
-    if not wait_for_service("http://127.0.0.1:18081/v1/chat/completions", timeout=10, method="POST", body='{"model":"m","messages":[{"role":"user","content":"hi"}]}'):
+    if not wait_for_service(
+        "http://127.0.0.1:18081/v1/chat/completions",
+        timeout=10,
+        method="POST",
+        body='{"model":"m","messages":[{"role":"user","content":"hi"}]}',
+    ):
         print("ERROR: Mock server failed to start")
         mock_proc.terminate()
         return 1
@@ -84,12 +88,23 @@ def main() -> int:
 
     benchmark_script = project_root / "benchmark" / "scripts" / "benchmark.py"
     bench_proc = subprocess.run(
-        [str(python_exe), str(benchmark_script),
-         "--experiment", "latency",
-         "--gateway-url", "http://127.0.0.1:18080",
-         "--output", str(result_file),
-         "--latency-concurrency", "1", "10", "50", "100",
-         "--latency-requests", "200"],
+        [
+            str(python_exe),
+            str(benchmark_script),
+            "--experiment",
+            "latency",
+            "--gateway-url",
+            "http://127.0.0.1:18080",
+            "--output",
+            str(result_file),
+            "--latency-concurrency",
+            "1",
+            "10",
+            "50",
+            "100",
+            "--latency-requests",
+            "200",
+        ],
         capture_output=False,
         text=False,
     )
@@ -105,9 +120,14 @@ def main() -> int:
     report_file = project_root / "benchmark" / "BENCHMARK_REPORT.md"
     report_script = project_root / "benchmark" / "scripts" / "generate_report.py"
     subprocess.run(
-        [str(python_exe), str(report_script),
-         "--input", str(project_root / "benchmark" / "results"),
-         "--output", str(report_file)],
+        [
+            str(python_exe),
+            str(report_script),
+            "--input",
+            str(project_root / "benchmark" / "results"),
+            "--output",
+            str(report_file),
+        ],
         capture_output=False,
     )
     print(f"  Report saved to: {report_file}")
@@ -134,7 +154,7 @@ def main() -> int:
     print("BENCHMARK COMPLETE")
     print("=" * 60)
     print()
-    print(f"Results:")
+    print("Results:")
     print(f"  Raw data: {result_file}")
     print(f"  Report:   {report_file}")
     print()

@@ -3,7 +3,8 @@
 import re
 from typing import TYPE_CHECKING
 
-from shared.models import GuardResult, GuardAction
+from shared.models import GuardAction, GuardResult
+
 from .base import BaseGuardRule
 
 if TYPE_CHECKING:
@@ -31,28 +32,18 @@ class TopicRestrictionRule(BaseGuardRule):
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)
         allowed = self._config.get("allowed_topics", [])
-        self._allowed_topics: list[str] = (
-            [str(t) for t in allowed] if isinstance(allowed, list) else []
-        )
+        self._allowed_topics: list[str] = [str(t) for t in allowed] if isinstance(allowed, list) else []
         # 为每个 allowed_topic 编译关键词模式
         self._topic_patterns: dict[str, re.Pattern[str]] = {}
         for topic in self._allowed_topics:
-            self._topic_patterns[topic] = re.compile(
-                re.escape(topic), re.IGNORECASE
-            )
+            self._topic_patterns[topic] = re.compile(re.escape(topic), re.IGNORECASE)
         # 越界模式
-        self._deny_patterns: list[re.Pattern[str]] = [
-            re.compile(p, re.IGNORECASE) for p in _DEFAULT_DENY_PATTERNS
-        ]
+        self._deny_patterns: list[re.Pattern[str]] = [re.compile(p, re.IGNORECASE) for p in _DEFAULT_DENY_PATTERNS]
 
-    async def check_input(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_input(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return self._check(text, phase="input")
 
-    async def check_output(
-        self, text: str, session: "SessionState | None" = None
-    ) -> GuardResult:
+    async def check_output(self, text: str, session: "SessionState | None" = None) -> GuardResult:
         return GuardResult(rule_id=self.rule_id, action=self.action)
 
     def _check(self, text: str, phase: str) -> GuardResult:

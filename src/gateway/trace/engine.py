@@ -9,17 +9,14 @@ import json
 import time
 import uuid
 from contextvars import ContextVar
-from typing import Any, cast
+from typing import cast
 
 from fastapi import Request
 
 from shared.logging import get_logger
 from shared.models import (
-    EvalScoreRecord,
-    GuardHitRecord,
     SpanFinishParams,
     SpanStartParams,
-    TokenUsage,
     TraceSpan,
 )
 
@@ -52,7 +49,7 @@ class TraceEngine:
 
     def __init__(self, store: TraceStore) -> None:
         """Args:
-            store: 已调用 initialize() 的 TraceStore 实例.
+        store: 已调用 initialize() 的 TraceStore 实例.
         """
         self._store = store
         self._span_start_times: dict[str, float] = {}
@@ -75,9 +72,7 @@ class TraceEngine:
         return _current_span_id.get()
 
     @staticmethod
-    def set_context(
-        trace_id: str, span_id: str, agent_id: str | None = None
-    ) -> None:
+    def set_context(trace_id: str, span_id: str, agent_id: str | None = None) -> None:
         _current_trace_id.set(trace_id)
         _current_span_id.set(span_id)
         if agent_id is not None:
@@ -256,9 +251,7 @@ class TraceEngine:
             else:
                 content_id = str(uuid.uuid4())
                 try:
-                    await self._store_large_content(
-                        content_id, params.span_id, req, resp
-                    )
+                    await self._store_large_content(content_id, params.span_id, req, resp)
                 except Exception as exc:
                     logger.error(
                         "store_large_content_failed",
@@ -272,9 +265,7 @@ class TraceEngine:
 
         # --- 生成摘要 ---
         request_summary = _generate_summary(request_json, 200) if request_json else None
-        response_summary = (
-            _generate_summary(response_json, 500) if response_json else None
-        )
+        response_summary = _generate_summary(response_json, 500) if response_json else None
 
         # --- 费用计算 ---
         cost = params.estimated_cost_usd
@@ -329,6 +320,7 @@ class TraceEngine:
             self._store.write_failures += 1
             try:
                 from gateway.metrics import trace_write_failures_total
+
                 trace_write_failures_total.set(self._store.write_failures)
             except Exception:
                 pass
@@ -353,6 +345,7 @@ class TraceEngine:
         # Prometheus instrumentation — every span completion is recorded
         try:
             from gateway.metrics import record_request
+
             record_request(status=params.status, latency_s=latency_ms / 1000.0)
         except Exception:
             pass
@@ -394,15 +387,11 @@ class TraceEngine:
         """查询 trace 元数据."""
         return await self._store.get_trace(trace_id)
 
-    async def list_traces(
-        self, limit: int = 50, offset: int = 0
-    ) -> list[dict[str, object]]:
+    async def list_traces(self, limit: int = 50, offset: int = 0) -> list[dict[str, object]]:
         """分页查询 trace 列表（按 created_at DESC）。不加载大体积内容."""
         return await self._store.list_traces(limit=limit, offset=offset)
 
-    async def get_span_tree(
-        self, trace_id: str, load_content: bool = False
-    ) -> dict[str, object] | None:
+    async def get_span_tree(self, trace_id: str, load_content: bool = False) -> dict[str, object] | None:
         """获取完整 span 调用树。
 
         Args:
@@ -468,9 +457,7 @@ class TraceEngine:
         }
 
         for s in spans:
-            total_tokens += int(cast(int, s.get("prompt_tokens", 0))) + int(
-                cast(int, s.get("completion_tokens", 0))
-            )
+            total_tokens += int(cast(int, s.get("prompt_tokens", 0))) + int(cast(int, s.get("completion_tokens", 0)))
             total_latency += float(cast(float, s.get("latency_ms", 0)))
             total_cost += float(cast(float, s.get("estimated_cost_usd", 0)))
 
@@ -510,6 +497,7 @@ class TraceEngine:
 # ------------------------------------------------------------------
 # 模块级工具函数
 # ------------------------------------------------------------------
+
 
 def _generate_summary(body_json: str | None, max_chars: int) -> str | None:
     """生成内容摘要。

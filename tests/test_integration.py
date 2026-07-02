@@ -4,10 +4,11 @@ Tests the full request lifecycle through the gateway.
 These tests use the FastAPI TestClient to simulate real requests.
 """
 
-import pytest
 import os
 
-from shared.constants import DEFAULT_GATEWAY_URL, DEFAULT_GATEWAY_PORT
+import pytest
+
+from shared.constants import DEFAULT_GATEWAY_URL
 
 # Ensure OPENAI_API_KEY is available for integration tests
 # Skip if no API key configured
@@ -35,6 +36,7 @@ class TestGatewayIntegration:
     def test_health_check(self, gateway_url):
         """Health endpoint should return ok."""
         import httpx
+
         resp = httpx.get(f"{gateway_url}/health")
         assert resp.status_code == 200
         data = resp.json()
@@ -43,13 +45,12 @@ class TestGatewayIntegration:
     def test_non_streaming_chat_completion(self, gateway_url):
         """Gateway should transparently proxy a non-streaming chat completion."""
         import httpx
+
         resp = httpx.post(
             f"{gateway_url}/v1/chat/completions",
             json={
                 "model": "gpt-4o-mini",
-                "messages": [
-                    {"role": "user", "content": "Say hello in exactly one word."}
-                ],
+                "messages": [{"role": "user", "content": "Say hello in exactly one word."}],
                 "stream": False,
                 "max_tokens": 10,
             },
@@ -70,14 +71,13 @@ class TestGatewayIntegration:
     def test_streaming_chat_completion(self, gateway_url):
         """Gateway should transparently proxy a streaming chat completion."""
         import httpx
+
         with httpx.stream(
             "POST",
             f"{gateway_url}/v1/chat/completions",
             json={
                 "model": "gpt-4o-mini",
-                "messages": [
-                    {"role": "user", "content": "Count from 1 to 3."}
-                ],
+                "messages": [{"role": "user", "content": "Count from 1 to 3."}],
                 "stream": True,
                 "max_tokens": 20,
             },
@@ -99,20 +99,19 @@ class TestGatewayIntegration:
                         done_seen = True
                         break
                     import json
+
                     chunks.append(json.loads(data_str))
 
             assert len(chunks) > 0
             # Should see content-rich chunks
-            has_content = any(
-                c.get("choices", [{}])[0].get("delta", {}).get("content")
-                for c in chunks
-            )
+            has_content = any(c.get("choices", [{}])[0].get("delta", {}).get("content") for c in chunks)
             assert has_content or done_seen
 
     def test_trace_recording(self, gateway_url):
         """Gateway should record traces for proxied requests."""
-        import httpx
         import time
+
+        import httpx
 
         # Send a request first
         resp = httpx.post(
@@ -148,6 +147,7 @@ class TestGatewayUnit:
     def test_create_app_returns_fastapi(self):
         """create_app() should return a FastAPI instance."""
         from gateway.main import create_app
+
         app = create_app()
         assert app is not None
         assert app.title == "Agent Proxy Gateway"
@@ -155,6 +155,7 @@ class TestGatewayUnit:
     def test_health_endpoint(self):
         """Health endpoint should work without external dependencies."""
         from fastapi.testclient import TestClient
+
         from gateway.main import create_app
 
         app = create_app()
@@ -178,24 +179,28 @@ class TestGatewayUnit:
     def test_middleware_chain_ordering(self):
         """Middleware chain should execute by priority."""
         from gateway.proxy.middleware import Middleware, MiddlewareChain
-        from shared.models import RequestContext, NormalizedRequest
+        from shared.models import NormalizedRequest, RequestContext
 
         order = []
 
         class M1(Middleware):
             priority = 10
+
             async def on_request(self, ctx):
                 order.append("m1_req")
                 return ctx
+
             async def on_response(self, ctx):
                 order.append("m1_resp")
                 return ctx
 
         class M2(Middleware):
             priority = 20
+
             async def on_request(self, ctx):
                 order.append("m2_req")
                 return ctx
+
             async def on_response(self, ctx):
                 order.append("m2_resp")
                 return ctx

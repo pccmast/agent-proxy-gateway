@@ -4,11 +4,12 @@ These provide precise types for JSON parsing so that basedpyright
 doesn't see every .get() as returning Any.
 """
 
-from typing import TypedDict, NotRequired
+from typing import NotRequired, TypedDict
 
 
 class OpenAIMessageDict(TypedDict, total=False):
     """An OpenAI chat message in the messages array."""
+
     role: str
     content: str
     name: NotRequired[str]
@@ -16,12 +17,14 @@ class OpenAIMessageDict(TypedDict, total=False):
 
 class OpenAIFunctionCallDict(TypedDict, total=False):
     """Function call inside a tool call."""
+
     name: str
     arguments: str
 
 
 class OpenAIToolCallDict(TypedDict, total=False):
     """A tool call (or partial) from assistant message or delta."""
+
     id: str
     type: str
     function: OpenAIFunctionCallDict
@@ -29,6 +32,7 @@ class OpenAIToolCallDict(TypedDict, total=False):
 
 class OpenAIFunctionDefDict(TypedDict, total=False):
     """A function definition inside a tool definition."""
+
     name: str
     description: str
     parameters: dict[str, object]
@@ -36,12 +40,14 @@ class OpenAIFunctionDefDict(TypedDict, total=False):
 
 class OpenAIToolDict(TypedDict, total=False):
     """A tool definition in the request."""
+
     type: str
     function: OpenAIFunctionDefDict
 
 
 class OpenAIRequestBodyDict(TypedDict, total=False):
     """The body of a POST /v1/chat/completions request."""
+
     model: str
     messages: list[OpenAIMessageDict]
     stream: bool
@@ -53,6 +59,7 @@ class OpenAIRequestBodyDict(TypedDict, total=False):
 
 class OpenAIMessageResponseDict(TypedDict, total=False):
     """The message field inside a non-streaming choice."""
+
     role: str
     content: str
     tool_calls: list[OpenAIToolCallDict]
@@ -60,6 +67,7 @@ class OpenAIMessageResponseDict(TypedDict, total=False):
 
 class OpenAIDeltaResponseDict(TypedDict, total=False):
     """The delta field inside a streaming choice."""
+
     role: str
     content: str
     tool_calls: list[OpenAIToolCallDict]
@@ -67,6 +75,7 @@ class OpenAIDeltaResponseDict(TypedDict, total=False):
 
 class OpenAIChoiceDict(TypedDict, total=False):
     """A single choice in either streaming or non-streaming response."""
+
     index: int
     message: OpenAIMessageResponseDict
     delta: OpenAIDeltaResponseDict
@@ -75,6 +84,7 @@ class OpenAIChoiceDict(TypedDict, total=False):
 
 class OpenAITokenUsageDict(TypedDict):
     """Token usage stats."""
+
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
@@ -82,6 +92,7 @@ class OpenAITokenUsageDict(TypedDict):
 
 class OpenAIResponseBodyDict(TypedDict, total=False):
     """A non-streaming /v1/chat/completions response."""
+
     id: str
     object: str
     model: str
@@ -91,6 +102,7 @@ class OpenAIResponseBodyDict(TypedDict, total=False):
 
 class OpenAIStreamChunkDict(TypedDict, total=False):
     """A single chunk in the SSE stream (parsed from 'data: {...}')."""
+
     id: str
     object: str
     model: str

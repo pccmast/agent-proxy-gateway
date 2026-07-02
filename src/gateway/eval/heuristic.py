@@ -77,7 +77,7 @@ class RepetitionEval:
             return EvalResult(name=self.name, score=1.0, details="Too short to assess")
 
         # Count bigrams
-        bigrams = [f"{words[i]}:{words[i+1]}" for i in range(len(words) - 1)]
+        bigrams = [f"{words[i]}:{words[i + 1]}" for i in range(len(words) - 1)]
         if not bigrams:
             return EvalResult(name=self.name, score=1.0, details="No bigrams")
 
@@ -89,10 +89,7 @@ class RepetitionEval:
         return EvalResult(
             name=self.name,
             score=round(score, 3),
-            details=(
-                f"Repetition ratio: {ratio:.3f} "
-                f"(threshold: {self.threshold})"
-            ),
+            details=(f"Repetition ratio: {ratio:.3f} (threshold: {self.threshold})"),
         )
 
 

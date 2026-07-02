@@ -3,10 +3,11 @@
 Requires the gateway to be running at GATEWAY_API_URL.
 """
 
-import streamlit as st
-import pandas as pd
-import httpx
 import time
+
+import httpx
+import pandas as pd
+import streamlit as st
 
 from shared.constants import DEFAULT_GATEWAY_URL
 
@@ -35,14 +36,16 @@ try:
         else:
             rows = []
             for t in traces:
-                rows.append({
-                    "Time": t.get("created_at", "")[-8:] if t.get("created_at") else "—",
-                    "Agent": t.get("agent_id", "-"),
-                    "Status": t.get("status", "?").upper(),
-                    "Tokens": t.get("total_tokens", 0),
-                    "Latency (ms)": round(t.get("total_latency_ms", 0), 1),
-                    "Trace ID": t.get("trace_id", "")[:12] + "...",
-                })
+                rows.append(
+                    {
+                        "Time": t.get("created_at", "")[-8:] if t.get("created_at") else "—",
+                        "Agent": t.get("agent_id", "-"),
+                        "Status": t.get("status", "?").upper(),
+                        "Tokens": t.get("total_tokens", 0),
+                        "Latency (ms)": round(t.get("total_latency_ms", 0), 1),
+                        "Trace ID": t.get("trace_id", "")[:12] + "...",
+                    }
+                )
 
             df = pd.DataFrame(rows)
             st.dataframe(df, use_container_width=True, hide_index=True)

@@ -1,9 +1,9 @@
 """Guardrail rules module — v2 with plugin discovery."""
 
 from .base import BaseGuardRule
-from .pii import PIIDetectionRule
-from .injection import InjectionDetectionRule
 from .content import ContentSafetyRule
+from .injection import InjectionDetectionRule
+from .pii import PIIDetectionRule
 
 __all__ = [
     "BaseGuardRule",

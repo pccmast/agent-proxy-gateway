@@ -31,14 +31,13 @@ import statistics
 import subprocess
 import sys
 import time
-import urllib.request
 import urllib.error
-from dataclasses import dataclass, asdict, field
+import urllib.request
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import httpx
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Service management (auto-start mode)
@@ -79,7 +78,9 @@ def start_services() -> bool:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    if not _wait_for_service("http://127.0.0.1:18081/v1/chat/completions", timeout=10, method="POST", body='{"model":"m"}'):
+    if not _wait_for_service(
+        "http://127.0.0.1:18081/v1/chat/completions", timeout=10, method="POST", body='{"model":"m"}'
+    ):
         print("ERROR: Mock server failed to start")
         return False
     print("[auto-start] Mock server ready")
@@ -121,6 +122,7 @@ def stop_services() -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 # Data models
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class LatencyResult:
@@ -176,6 +178,7 @@ class BenchmarkOutput:
 # Core benchmark functions
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 async def _single_request(
     client: httpx.AsyncClient,
     url: str,
@@ -207,9 +210,7 @@ async def _single_streaming_request(
     first_token_time: float | None = None
 
     try:
-        async with client.stream(
-            "POST", url, json=body, headers=headers, timeout=30.0
-        ) as response:
+        async with client.stream("POST", url, json=body, headers=headers, timeout=30.0) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
                 if line.startswith("data: ") and first_token_time is None:
@@ -462,6 +463,7 @@ async def run_breakdown_benchmark(
 # Output and reporting
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _get_hardware_info() -> dict[str, Any]:
     """Collect hardware and environment information."""
     return {
@@ -529,21 +531,11 @@ def _print_breakdown_table(results: list[BreakdownResult]) -> None:
     avg = BreakdownResult(
         concurrency=1,
         requests=len(results),
-        adapter_normalize_ms=round(
-            statistics.mean([r.adapter_normalize_ms for r in results]), 2
-        ),
-        middleware_request_ms=round(
-            statistics.mean([r.middleware_request_ms for r in results]), 2
-        ),
-        upstream_forward_ms=round(
-            statistics.mean([r.upstream_forward_ms for r in results]), 2
-        ),
-        middleware_response_ms=round(
-            statistics.mean([r.middleware_response_ms for r in results]), 2
-        ),
-        trace_finish_ms=round(
-            statistics.mean([r.trace_finish_ms for r in results]), 2
-        ),
+        adapter_normalize_ms=round(statistics.mean([r.adapter_normalize_ms for r in results]), 2),
+        middleware_request_ms=round(statistics.mean([r.middleware_request_ms for r in results]), 2),
+        upstream_forward_ms=round(statistics.mean([r.upstream_forward_ms for r in results]), 2),
+        middleware_response_ms=round(statistics.mean([r.middleware_response_ms for r in results]), 2),
+        trace_finish_ms=round(statistics.mean([r.trace_finish_ms for r in results]), 2),
         total_ms=round(statistics.mean([r.total_ms for r in results]), 2),
     )
 
@@ -576,12 +568,12 @@ def _print_interview_takeaways(latency_results: list[LatencyResult], streaming: 
         high = next((r for r in latency_results if r.concurrency >= 100), None)
 
         print(f"* Single-request P50 latency: {best.p50_ms} ms")
-        print(f"  (This is the 'gateway overhead' for one request)")
+        print("  (This is the 'gateway overhead' for one request)")
         print()
         print(f"* Peak throughput: {peak.qps} QPS @ {peak.concurrency} concurrency")
         print()
         if high:
-            print(f"* At 100 concurrent requests:")
+            print("* At 100 concurrent requests:")
             print(f"  - P50 latency: {high.p50_ms} ms")
             print(f"  - P95 latency: {high.p95_ms} ms")
             print(f"  - Error rate: {high.error_rate * 100:.2f}%")
@@ -591,27 +583,25 @@ def _print_interview_takeaways(latency_results: list[LatencyResult], streaming: 
             if p95_jump > 3:
                 print(f"* Bottleneck identified: P95 latency increased {p95_jump:.1f}x")
                 print(f"  from {best.concurrency} to {high.concurrency} concurrency.")
-                print(f"  Primary suspect: SQLite write lock contention.")
+                print("  Primary suspect: SQLite write lock contention.")
 
     if streaming.requests > 0:
         print(f"* Streaming TTFT P50: {streaming.ttft_p50_ms} ms")
-        print(f"  (Time from request to first SSE chunk)")
+        print("  (Time from request to first SSE chunk)")
 
     print()
     print("Sample interview answer:")
     print('  "I ran benchmarks with a mock upstream to isolate gateway')
-    print('   performance. Single-request P50 is ~{:.0f}ms, and at 100')
-    print('   concurrency P95 rises to ~{:.0f}ms due to SQLite lock')
-    print('   contention. The optimization path is WAL mode first,'.format(
-        best.p50_ms if latency_results else 0,
-        high.p95_ms if high else 0,
-    ))
+    print("   performance. Single-request P50 is ~{:.0f}ms, and at 100")
+    print("   concurrency P95 rises to ~{:.0f}ms due to SQLite lock")
+    print("   contention. The optimization path is WAL mode first,")
     print('   then PostgreSQL migration."')
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Main entry point
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Gateway benchmark client")
@@ -701,10 +691,7 @@ async def main() -> None:
                 gateway_url=args.gateway_url,
             )
             latency_results.append(result)
-            print(
-                f"  Done: P50={result.p50_ms}ms, P95={result.p95_ms}ms, "
-                f"QPS={result.qps}, Errors={result.errors}"
-            )
+            print(f"  Done: P50={result.p50_ms}ms, P95={result.p95_ms}ms, QPS={result.qps}, Errors={result.errors}")
 
         _print_latency_table(latency_results)
         results_data = [asdict(r) for r in latency_results]

@@ -2,27 +2,25 @@
 
 import pytest
 
-from gateway.guardrails.rules.pii import PIIDetectionRule
-from gateway.guardrails.rules.injection import InjectionDetectionRule
-from gateway.guardrails.rules.content import ContentSafetyRule
-from gateway.guardrails.engine import GuardrailsEngine
 from gateway.guardrails.action import apply_redact, format_block_reason
+from gateway.guardrails.engine import GuardrailsEngine
+from gateway.guardrails.rules.content import ContentSafetyRule
+from gateway.guardrails.rules.injection import InjectionDetectionRule
+from gateway.guardrails.rules.pii import PIIDetectionRule
 from gateway.proxy.middleware import BlockException
 from shared.models import (
-    GuardResult,
     GuardAction,
-    RequestContext,
-    ResponseContext,
+    Message,
     NormalizedRequest,
     NormalizedResponse,
-    Message,
-    TokenUsage,
+    RequestContext,
+    ResponseContext,
 )
-
 
 # ==========================================================================
 # PII Detection
 # ==========================================================================
+
 
 class TestPIIDetection:
     """Tests for PII detection rule."""
@@ -62,6 +60,7 @@ class TestPIIDetection:
 # ==========================================================================
 # Injection Detection
 # ==========================================================================
+
 
 class TestInjectionDetection:
     """Tests for prompt injection detection."""
@@ -103,6 +102,7 @@ class TestInjectionDetection:
 # Content Safety
 # ==========================================================================
 
+
 class TestContentSafety:
     """Tests for content safety detection."""
 
@@ -141,6 +141,7 @@ class TestContentSafety:
 # Redact Action
 # ==========================================================================
 
+
 class TestRedactAction:
     """Tests for redaction logic."""
 
@@ -174,6 +175,7 @@ class TestRedactAction:
 # ==========================================================================
 # GuardrailsEngine Integration
 # ==========================================================================
+
 
 class TestGuardrailsEngine:
     """Tests for the GuardrailsEngine middleware."""
@@ -269,7 +271,9 @@ class TestGuardrailsEngine:
             trace_id="test",
             span_id="test",
             request=NormalizedRequest(
-                provider="openai", model="gpt-4o", messages=[Message(role="user", content="Hi")],
+                provider="openai",
+                model="gpt-4o",
+                messages=[Message(role="user", content="Hi")],
             ),
             response=NormalizedResponse(
                 provider="openai",
@@ -287,7 +291,9 @@ class TestGuardrailsEngine:
             trace_id="test",
             span_id="test",
             request=NormalizedRequest(
-                provider="openai", model="gpt-4o", messages=[Message(role="user", content="Hi")],
+                provider="openai",
+                model="gpt-4o",
+                messages=[Message(role="user", content="Hi")],
             ),
             response=NormalizedResponse(
                 provider="openai",
@@ -304,7 +310,4 @@ class TestGuardrailsEngine:
         assert "injection-detection" in stats
         assert "content-safety" in stats
         # All should start at 0 (v2: each value is {"total": N, ...})
-        assert all(
-            isinstance(v, dict) and v.get("total", 0) == 0
-            for v in stats.values()
-        )
+        assert all(isinstance(v, dict) and v.get("total", 0) == 0 for v in stats.values())

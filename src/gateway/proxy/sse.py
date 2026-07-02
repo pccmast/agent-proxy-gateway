@@ -7,9 +7,10 @@ v2 — added TTFT (Time to First Token) tracking.
 
 import json
 import time
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
-from shared.models import StreamChunk, StreamContext, TokenUsage
+from shared.models import StreamContext, TokenUsage
 
 
 class SSEInterceptor:
@@ -54,9 +55,7 @@ class SSEInterceptor:
         self._first_token_time: float | None = None
         self._ttft_ms: float = 0.0
 
-    async def aiter_lines(
-        self, response: Any
-    ) -> AsyncIterator[tuple[bytes, str]]:
+    async def aiter_lines(self, response: Any) -> AsyncIterator[tuple[bytes, str]]:
         """Iterate over SSE lines from the upstream response.
 
         Yields (raw_bytes_line, decoded_line) tuples.
@@ -91,7 +90,7 @@ class SSEInterceptor:
             return line_bytes
 
         try:
-            chunk_data = json.loads(data_str)
+            _chunk_data = json.loads(data_str)
         except json.JSONDecodeError:
             return line_bytes
 
@@ -105,9 +104,7 @@ class SSEInterceptor:
             # Record TTFT on first content-bearing chunk
             if self._first_token_time is None:
                 self._first_token_time = time.monotonic()
-                self._ttft_ms = (
-                    self._first_token_time - self._stream_start_time
-                ) * 1000.0
+                self._ttft_ms = (self._first_token_time - self._stream_start_time) * 1000.0
             self.accumulated_content += chunk.delta_content
         if chunk.delta_tool_call:
             self.accumulated_tool_calls.append(chunk.delta_tool_call)
@@ -137,11 +134,7 @@ class SSEInterceptor:
             # Replacing preserves stream structure while filtering harm.
             if chunk.delta_content:
                 placeholder = "[已过滤]"
-                replacement = (
-                    'data: {"choices":[{"delta":{"content":"'
-                    + placeholder
-                    + '"}}]}\n\n'
-                )
+                replacement = 'data: {"choices":[{"delta":{"content":"' + placeholder + '"}}]}\n\n'
                 return replacement.encode("utf-8")
             # Tool-call / usage-only chunks: drop silently.
             # These carry structural metadata, not user-visible text.
@@ -222,10 +215,7 @@ class SSEInterceptor:
                         for g in resp_ctx.guard_results
                     ],
                     eval_scores=[
-                        EvalScoreRecord(
-                            name=r.name, score=r.score, details=r.details
-                        )
-                        for r in resp_ctx.eval_results
+                        EvalScoreRecord(name=r.name, score=r.score, details=r.details) for r in resp_ctx.eval_results
                     ],
                     request_body=self.trace_context.request.raw_body,
                     response_body=self.final_chunk_raw,
