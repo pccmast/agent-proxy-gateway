@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from shared.constants import DEFAULT_GATEWAY_HOST, DEFAULT_GATEWAY_PORT
+from shared.constants import DEFAULT_DASHBOARD_PORT, DEFAULT_GATEWAY_HOST, DEFAULT_GATEWAY_PORT
 
 
 class GatewaySettings(BaseSettings):
@@ -43,7 +43,7 @@ class GatewaySettings(BaseSettings):
     db_path: str = "data/gateway.db"
 
     # Dashboard
-    dashboard_port: int = 8502
+    dashboard_port: int = DEFAULT_DASHBOARD_PORT
 
     # Provider configs loaded from YAML (base_url, api_key_env, default_model)
     _provider_configs: dict[str, dict[str, str]] = {}
