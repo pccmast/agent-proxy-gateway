@@ -89,8 +89,8 @@ uv run gateway
 # → http://localhost:18080
 
 # (Optional) Start dashboard
-uv run streamlit run dashboard/app.py --server.port 8502
-# → http://localhost:8502
+uv run streamlit run dashboard/app.py --server.port 8599
+# → http://localhost:8599
 
 # Validate config (dry-run — no server started)
 uv run validate-config
@@ -123,7 +123,7 @@ uv run python scripts/demo.py
 ```bash
 docker-compose up -d
 # Gateway:  http://localhost:18080
-# Dashboard: http://localhost:8502
+# Dashboard: http://localhost:8599
 ```
 
 ## Features
