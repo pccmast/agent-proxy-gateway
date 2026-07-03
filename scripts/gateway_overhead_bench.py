@@ -13,7 +13,6 @@ import os
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any
 
 import httpx
 
@@ -82,10 +81,14 @@ def _request(client: httpx.Client, url: str, payload: dict) -> tuple[float, str,
     """Returns (latency_seconds, action, content_or_None)."""
     t0 = time.perf_counter()
     try:
-        r = client.post(url, json=payload, headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {API_KEY}",
-        })
+        r = client.post(
+            url,
+            json=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {API_KEY}",
+            },
+        )
         lat = time.perf_counter() - t0
         try:
             data = r.json()
@@ -114,20 +117,19 @@ def main() -> None:
     print(f"Model: {MODEL} | Warmup: {WARMUP_ROUNDS} | Rounds: {MEASURE_ROUNDS}")
     print("=" * 70)
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_KEY}",
-    }
-
     results: list[Result] = []
 
     for prompt in PROMPTS:
         name = prompt["name"]
-        payload = {"model": MODEL, "messages": [{"role": "user", "content": prompt["content"]}],
-                    "max_tokens": prompt["max_tokens"], "stream": False}
+        payload = {
+            "model": MODEL,
+            "messages": [{"role": "user", "content": prompt["content"]}],
+            "max_tokens": prompt["max_tokens"],
+            "stream": False,
+        }
 
         print(f"\n  {name}")
-        print(f"  {'─'*40}")
+        print(f"  {'─' * 40}")
 
         # ── Direct ──
         direct_lats: list[float] = []
@@ -161,10 +163,12 @@ def main() -> None:
                     gw_valid += 1
                 time.sleep(0.03)
 
-        print(f"  Direct:  P50={sorted(direct_lats)[len(direct_lats)//2]*1000:.0f}ms ({direct_valid} valid)")
-        print(f"  Gateway: P50={sorted(gw_lats)[len(gw_lats)//2]*1000:.0f}ms ({gw_valid}/{MEASURE_ROUNDS} OK)")
+        print(f"  Direct:  P50={sorted(direct_lats)[len(direct_lats) // 2] * 1000:.0f}ms ({direct_valid} valid)")
+        print(f"  Gateway: P50={sorted(gw_lats)[len(gw_lats) // 2] * 1000:.0f}ms ({gw_valid}/{MEASURE_ROUNDS} OK)")
 
-        results.append(Result(name=name, latencies_direct=direct_lats, latencies_gateway=gw_lats, gw_actions=gw_actions))
+        results.append(
+            Result(name=name, latencies_direct=direct_lats, latencies_gateway=gw_lats, gw_actions=gw_actions)
+        )
 
     # ── Summary ──
     print("\n" + "=" * 70)
@@ -179,7 +183,9 @@ def main() -> None:
             gw_summary = f"BLOCKED x{r.gw_actions.count('blocked')}"
         elif r.gw_actions.count("error") > 0:
             gw_summary = f"ERROR x{r.gw_actions.count('error')}"
-        print(f"{r.name:<20} {r.p50_d:>6.0f}ms {r.p50_g:>6.0f}ms {r.overhead_ms:>7.1f}ms {r.overhead_pct:>7.1f}% {gw_summary:>12}")
+        print(
+            f"{r.name:<20} {r.p50_d:>6.0f}ms {r.p50_g:>6.0f}ms {r.overhead_ms:>7.1f}ms {r.overhead_pct:>7.1f}% {gw_summary:>12}"
+        )
 
     # ── Overall (normal traffic only) ──
     normal = [r for r in results if r.gw_actions.count("ok") > 0 and r.gw_actions.count("blocked") == 0]
@@ -189,8 +195,12 @@ def main() -> None:
         if all_d and all_g:
             overall = Result(name="OVERALL", latencies_direct=all_d, latencies_gateway=all_g)
             print("-" * 70)
-            print(f"{'OVERALL (normal)':<20} {overall.p50_d:>6.0f}ms {overall.p50_g:>6.0f}ms {overall.overhead_ms:>7.1f}ms {overall.overhead_pct:>7.1f}%")
-            print(f"  P95: direct={overall.p95_d:.0f}ms | gateway={overall.p95_g:.0f}ms | overhead={overall.p95_g - overall.p95_d:.1f}ms")
+            print(
+                f"{'OVERALL (normal)':<20} {overall.p50_d:>6.0f}ms {overall.p50_g:>6.0f}ms {overall.overhead_ms:>7.1f}ms {overall.overhead_pct:>7.1f}%"
+            )
+            print(
+                f"  P95: direct={overall.p95_d:.0f}ms | gateway={overall.p95_g:.0f}ms | overhead={overall.p95_g - overall.p95_d:.1f}ms"
+            )
 
     # ── Guardrail ──
     guarded = [r for r in results if r.gw_actions.count("blocked") > 0 or r.gw_actions.count("error") > 0]
