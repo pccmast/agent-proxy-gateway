@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # Agent Proxy Gateway — Multi-stage Dockerfile
 #
 # Stages:
@@ -28,7 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
-RUN pip install --no-cache-dir uv
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir uv
 
 # Runtime environment
 ENV PYTHONUNBUFFERED=1 \
@@ -43,9 +46,10 @@ ENV PYTHONUNBUFFERED=1 \
 # ============================================================
 FROM base AS gateway
 
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 # Install gateway deps (excludes streamlit + pandas which dashboard uses)
-RUN uv pip install --system \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system \
     "fastapi>=0.110" \
     "uvicorn[standard]>=0.30" \
     "httpx[http2]>=0.27" \
@@ -73,7 +77,8 @@ CMD ["python", "-m", "gateway.main"]
 FROM base AS dashboard
 
 # Install dashboard deps only (no fastapi/presidio/tiktoken/aiosqlite)
-RUN uv pip install --system \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system \
     "streamlit>=1.35" \
     "httpx>=0.27" \
     "pandas>=2.0"
