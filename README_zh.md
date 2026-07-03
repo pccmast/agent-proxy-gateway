@@ -61,17 +61,19 @@ git clone <repo-url>
 cd agent-gateway
 
 # 安装依赖
-uv pip install -e ".[dev]"
+uv sync --extra dev
 
-# 设置 API 密钥
+# 设置 API 密钥（pydantic-settings 自动读取 .env）
 export OPENAI_API_KEY=sk-your-key
+# 或创建 .env 文件：
+echo "OPENAI_API_KEY=sk-your-key" > .env
 
 # 启动网关
 uv run gateway
 # → http://localhost:18080
 
 # （可选）启动仪表盘
-uv run streamlit run dashboard/app.py
+uv run streamlit run dashboard/app.py --server.port 8599
 # → http://localhost:8599
 ```
 
@@ -150,9 +152,12 @@ agent-gateway/
 │   ├── app.py                # Streamlit 仪表盘入口
 │   └── pages/                # 概览、追踪、护栏、预算、评估
 ├── scripts/
-│   ├── demo.py               # 端到端演示
-│   └── seed_data.py          # 测试数据生成器
-├── tests/                    # 86 个单元 + 集成测试
+│   ├── demo.py                   # 端到端演示
+│   ├── gateway_overhead_bench.py # 网关开销基准测试
+│   ├── seed_data.py              # 测试数据生成器
+│   ├── test_pii_live.py          # PII 实时测试
+├── tests/                        # 154 个测试
+├── .github/workflows/ci.yml      # CI/CD（ruff + mypy + pytest + Docker）
 ├── Dockerfile
 ├── docker-compose.yml
 ├── pyproject.toml

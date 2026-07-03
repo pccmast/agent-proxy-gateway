@@ -17,7 +17,7 @@ Agent (OpenAI / Anthropic SDK)
 │                                                          │
 │  ┌────────────── Middleware Chain ──────────────────┐   │
 │  │ Priority 3:  RequestTimeoutGuard                 │   │
-│  │ Priority 10: GuardrailsEngine (11 rules)         │   │
+│  │ Priority 10: GuardrailsEngine (12 rules)         │   │
 │  │   ├── PII / Credential Leak / Injection          │   │
 │  │   ├── Content Safety / System Prompt / Topic     │   │
 │  │   ├── Jailbreak / Tool-Call Loop / Hallucination │   │
@@ -63,9 +63,10 @@ cd agent-gateway
 # Install dependencies
 uv sync
 
-# Copy and edit config
-cp .env.example .env
-# → set OPENAI_API_KEY=sk-your-key
+# Set API key (pydantic-settings reads from .env automatically)
+export OPENAI_API_KEY=sk-your-key
+# Or create .env file:
+echo "OPENAI_API_KEY=sk-your-key" > .env
 ```
 
 The gateway routes requests to the upstream provider configured in `config/default.yaml`:
@@ -139,7 +140,7 @@ docker-compose up -d
 | **Credential Leak** | ✅ | API keys, JWT, AWS keys, connection strings in prompts |
 | **Injection Guardrail** | ✅ | Prompt injection attack detection & blocking |
 | **Content Safety** | ✅ | Violence, self-harm, illegal content filtering |
-| **11 Guardrail Rules** | ✅ | PII, injection, content, jailbreak, system-prompt, etc. |
+| **12 Guardrail Rules** | ✅ | PII, injection, content, jailbreak, system-prompt, etc. |
 | **Rate Limiting** | ✅ | RPM/TPM sliding-window per model |
 | **Token Budget** | ✅ | Hourly/daily limits with 80% warning threshold |
 | **Circuit Breaker** | ✅ | CLOSED → OPEN → HALF_OPEN state machine |
@@ -181,7 +182,7 @@ Gateway behavior is controlled via YAML files in `config/`:
 
 ### Guardrails (`config/guardrails.yaml`)
 
-11 auto-discovered rule types (drop a `.py` in `rules/` → loaded at startup):
+12 auto-discovered rule types (drop a `.py` in `rules/` → loaded at startup):
 
 | Rule | Type | Action | Phase |
 |------|------|--------|-------|
@@ -245,11 +246,13 @@ agent-gateway/
 │   ├── app.py                # Streamlit dashboard entry
 │   └── pages/                # Overview, Traces, Guardrails, Budget, Eval
 ├── scripts/
-│   ├── demo.py               # End-to-end demo (7 steps)
-│   ├── seed_data.py          # Test data generator
-│   ├── startup_check.py      # One-click startup verification
-│   └── docker_test.sh        # Docker smoke test (10 steps)
-├── tests/                    # 154 pytest functions (10 files, 3.4k lines)
+│   ├── demo.py                   # End-to-end demo (7 steps)
+│   ├── gateway_overhead_bench.py # Gateway overhead benchmark
+│   ├── seed_data.py              # Test data generator
+│   ├── startup_check.py          # One-click startup verification
+│   └── docker_test.sh            # Docker smoke test
+├── tests/                        # 154 tests
+├── .github/workflows/ci.yml      # CI/CD (ruff + mypy + pytest + Docker)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── pyproject.toml
