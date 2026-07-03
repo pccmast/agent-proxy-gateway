@@ -329,7 +329,10 @@ class ProxyEngine:
                     )
             return JSONResponse(
                 status_code=500,
-                content={"error": "Internal gateway error"},
+                content={
+                    "error": f"Internal gateway error: {type(exc).__name__}",
+                    "detail": str(exc)[:500],
+                },
             )
 
     async def _forward_non_stream(
