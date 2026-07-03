@@ -178,13 +178,15 @@ class ProxyEngine:
                     },
                 )
 
-            # --- Propagate request-phase redactions to the raw body ---
+            # --- Propagate request-phase redactions to the upstream body ---
             # GuardrailsEngine REDACT modifies ctx.request.messages in-place,
             # but the upstream receives raw_body (the original request dict).
-            # Without this step, PII is detected and logged but still leaks to
-            # the upstream LLM.
+            # Build a new dict to avoid Content-Length mismatch on connection reuse.
             if ctx.guard_results and any(hasattr(g, "action") and str(g.action) == "redact" for g in ctx.guard_results):
-                raw_body["messages"] = [{"role": m.role, "content": m.content} for m in ctx.request.messages]
+                raw_body = {
+                    **raw_body,
+                    "messages": [{"role": m.role, "content": m.content} for m in ctx.request.messages],
+                }
 
             api_key = self._get_api_key(adapter.provider)
             upstream_url = adapter.get_upstream_url(path, self._get_base_url(adapter.provider))
@@ -299,14 +301,15 @@ class ProxyEngine:
 
         except Exception as exc:
             # Catch-all: prevent orphan traces from unhandled exceptions
-            import traceback as tb
+            import traceback as _tb2
 
+            _tb_str = _tb2.format_exc()
             logger.error(
                 "unhandled_exception",
                 trace_id=trace_id,
                 span_id=span_id,
                 error=str(exc),
-                traceback=tb.format_exc(),
+                traceback=_tb_str,
             )
             if self.trace_engine and trace_id:
                 from shared.models import SpanFinishParams

@@ -193,7 +193,9 @@ class OpenAIAdapter(ProtocolAdapter):
         If no gateway-level API key is configured, preserve the client's Authorization header.
         """
         headers = {
-            k: v for k, v in original_headers.items() if k.lower() not in ("host", "authorization", "transfer-encoding")
+            k: v
+            for k, v in original_headers.items()
+            if k.lower() not in ("host", "authorization", "transfer-encoding", "content-length")
         }
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"

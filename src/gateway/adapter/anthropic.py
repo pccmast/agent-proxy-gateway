@@ -222,7 +222,7 @@ class AnthropicAdapter(ProtocolAdapter):
         self, original_headers: dict[str, str], api_key: str, base_url: str = ""
     ) -> dict[str, str]:
         """Replace auth headers with Anthropic's x-api-key format."""
-        skip = {"host", "x-api-key", "authorization", "transfer-encoding"}
+        skip = {"host", "x-api-key", "authorization", "transfer-encoding", "content-length"}
         headers = {k: v for k, v in original_headers.items() if k.lower() not in skip}
         headers["x-api-key"] = api_key
         # Derive Host from base_url when available, fallback to api.anthropic.com
