@@ -130,6 +130,7 @@ def _start_gateway(stderr_path: Path) -> subprocess.Popen:
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["OPENAI_API_KEY"] = API_KEY
+    env["GATEWAY_DEV"] = "0"  # disable reload in test mode
 
     stderr_fh = open(str(stderr_path), "w", encoding="utf-8")
     proc = subprocess.Popen(

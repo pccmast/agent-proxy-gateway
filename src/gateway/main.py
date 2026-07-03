@@ -286,8 +286,14 @@ def run_server() -> None:
     import uvicorn
 
     config = load_config()
-    # reload=True is dev-only and breaks in containers (watcher exits code 0)
-    uvicorn.run("gateway.main:create_app", factory=True, host=config.host, port=config.port)
+    dev_mode = os.environ.get("GATEWAY_DEV", "").lower() in ("1", "true", "yes")
+    uvicorn.run(
+        "gateway.main:create_app",
+        factory=True,
+        host=config.host,
+        port=config.port,
+        reload=dev_mode,
+    )
 
 
 def validate_config() -> None:
