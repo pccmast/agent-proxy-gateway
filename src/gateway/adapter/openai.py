@@ -98,7 +98,7 @@ class OpenAIAdapter(ProtocolAdapter):
         choice: OpenAIChoiceDict = choices[0] if choices else _EMPTY_CHOICE
         message = choice.get("message") or choice.get("delta") or _EMPTY_DELTA
 
-        content = message.get("content")
+        content = message.get("content") or message.get("reasoning_content")
         tool_calls: list[ToolCall] | None = None
         raw_tool_calls = message.get("tool_calls") or []
         if raw_tool_calls:
@@ -168,7 +168,7 @@ class OpenAIAdapter(ProtocolAdapter):
             )
 
         return StreamChunk(
-            delta_content=delta.get("content"),
+            delta_content=delta.get("content") or delta.get("reasoning_content"),
             delta_tool_call=tool_call_delta,
             usage=usage,
             finish_reason=choice.get("finish_reason"),
