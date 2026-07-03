@@ -17,6 +17,15 @@ config/*.bak
 .idea/
 .workbuddy/
 
+# Environment (contains API keys — never in image)
+.env
+
+# Tests — not needed at runtime
+tests/
+
+# Scripts — not needed at runtime
+scripts/
+
 # Benchmark — not needed in container
 benchmark/
 benchmark_v2/
@@ -26,7 +35,16 @@ projects_md/
 
 # Build / test artifacts
 pyright*
+*.log
 
 # Legacy — kept out of image
 fix_core.py
 *_new_main.py
+
+# Misc root files not needed in image
+# NOTE: pyproject.toml and uv.lock are explicitly COPY'd in Dockerfile — do NOT ignore
+.gitignore
+README*.md
+ROADMAP.md
+.dockerignore
+docker-compose.yml
