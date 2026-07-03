@@ -177,8 +177,12 @@ class OpenAIAdapter(ProtocolAdapter):
         )
 
     def get_upstream_url(self, path: str, base_url: str) -> str:  # type: ignore[override,unused-ignore]
-        """Build the full upstream URL for forwarding."""
-        return base_url.rstrip("/") + path
+        """Build the full upstream URL, avoiding double /v1."""
+        base = base_url.rstrip("/")
+        normalized_path = path
+        if base.endswith("/v1") and path.startswith("/v1"):
+            normalized_path = path[3:]
+        return base + normalized_path
 
     def get_upstream_headers(  # type: ignore[override,unused-ignore]
         self, original_headers: dict[str, str], api_key: str, base_url: str = ""
