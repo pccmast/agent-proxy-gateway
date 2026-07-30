@@ -919,3 +919,64 @@ class TestTraceEngine:
         assert trace["session_id"] == "sess-abc"
         assert trace["client_ip"] == "10.0.0.1"
         assert trace["user_agent"] == "openai-python/1.0"
+
+    @pytest.mark.asyncio
+    async def test_proxy_span_tree_two_levels_and_idempotent(self, engine, store):
+        """Proxy wiring: root(gateway) + one child(upstream LLM), both finish once.
+
+        Mirrors proxy/core.py: a child span is created under the root for the
+        upstream LLM call, finished with the LLM payload, then the root is
+        finished as the request envelope. Re-finishing the same span must be a
+        no-op (idempotent guard) and must not create a duplicate.
+        """
+        from unittest.mock import AsyncMock
+
+        from fastapi import Request
+
+        from gateway.trace.tree import SpanTree
+
+        mock_req = AsyncMock(spec=Request)
+        mock_req.headers = {}
+        mock_req.client = None
+        mock_req.url.path = "/v1/chat/completions"
+
+        trace_id, root_id = await engine.start_trace(mock_req)
+
+        # Child span for the upstream LLM completion call.
+        child_id = await engine.start_span(
+            SpanStartParams(
+                provider="openai",
+                model="gpt-4o",
+                parent_span_id=root_id,
+                request_path="/v1/chat/completions",
+            )
+        )
+        # Finish child with LLM payload.
+        await engine.finish_span(
+            SpanFinishParams(
+                trace_id=trace_id,
+                span_id=child_id,
+                status="ok",
+                token_usage=TokenUsage(prompt_tokens=1000, completion_tokens=500, total_tokens=1500),
+            )
+        )
+        # Finish root as the request envelope.
+        await engine.finish_span(SpanFinishParams(trace_id=trace_id, span_id=root_id, status="ok"))
+        # Idempotent: a second finish of the same span must not error / duplicate.
+        await engine.finish_span(SpanFinishParams(trace_id=trace_id, span_id=root_id, status="ok"))
+
+        spans = await store.get_spans(trace_id)
+        assert len(spans) == 2
+        by_id = {s["span_id"]: s for s in spans}
+        assert by_id[child_id]["parent_span_id"] == root_id
+        assert by_id[root_id]["parent_span_id"] is None
+
+        # Reconstruction must yield a 2-level tree.
+        tree = await SpanTree(spans).build()
+        assert tree is not None
+        assert tree.span_id == root_id
+        assert len(tree.children) == 1
+        assert tree.children[0].span_id == child_id
+        assert tree.children[0].provider == "openai"
+        assert tree.children[0].model == "gpt-4o"
+        assert tree.subtree_tokens == 1500

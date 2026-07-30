@@ -259,6 +259,7 @@ class RequestContext(BaseModel):
     guard_results: list[GuardResult] = Field(default_factory=list)
     timeout_deadline: float = 0.0  # set by RequestTimeoutGuard (P3)
     timeout_seconds: float = 0.0
+    upstream_span_id: str = ""  # nested child span for the upstream LLM call; "" until created
 
 
 class ResponseContext(BaseModel):
@@ -282,3 +283,4 @@ class StreamContext(BaseModel):
     accumulated_content: str = ""
     guard_results: list[GuardResult] = Field(default_factory=list)
     agent_id: str = ""  # 来源 agent（来自 X-Agent-ID 头），供 per-agent TPM 记账
+    upstream_span_id: str = ""  # nested child span for the upstream LLM call; "" until created

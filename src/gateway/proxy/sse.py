@@ -156,6 +156,8 @@ class SSEInterceptor:
         # Determine completion mode
         completed_normally = self.stream_done
         status = "ok" if completed_normally else "abandoned"
+        # Resolve the upstream-LLM child span id (falls back to root if none).
+        child_id = getattr(self.trace_context, "upstream_span_id", "") or self.trace_context.span_id
 
         # Circuit breaker: stream completed normally — upstream is healthy
         if completed_normally and self.circuit_breaker:
@@ -202,7 +204,7 @@ class SSEInterceptor:
             await self.trace_engine.finish_span(
                 SpanFinishParams(
                     trace_id=self.trace_context.trace_id,
-                    span_id=self.trace_context.span_id,
+                    span_id=child_id,
                     status=status,
                     token_usage=self.total_usage,
                     ttft_ms=self._ttft_ms,
@@ -224,6 +226,20 @@ class SSEInterceptor:
                     response_body=self.final_chunk_raw,
                 )
             )
+
+        # Finish the root (gateway request) span as the request envelope.
+        if self.trace_engine and self.trace_context.trace_id and child_id != self.trace_context.span_id:
+            try:
+                await self.trace_engine.finish_span(
+                    SpanFinishParams(
+                        trace_id=self.trace_context.trace_id,
+                        span_id=self.trace_context.span_id,
+                        status=status,
+                        request_body=self.trace_context.request.raw_body if self.trace_context.request else None,
+                    )
+                )
+            except Exception:
+                pass
 
         # Budget tracking (best-effort, never raises). Mirrors the non-stream
         # path: record token usage + estimated cost once per completed request.

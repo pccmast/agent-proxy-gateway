@@ -107,13 +107,14 @@ class ProxyEngine:
         headers = dict(request.headers)
         path = request.url.path
 
-        from shared.models import RequestContext
+        from shared.models import RequestContext, SpanStartParams
 
         normalized_req = await adapter.normalize_request(raw_body, headers, path)
 
         # Get trace context from trace engine (if available)
         trace_id = ""
         span_id = ""
+        upstream_span_id = span_id  # nested upstream-LLM child span; equals root until created
         if self.trace_engine:
             trace_id, span_id = await self.trace_engine.start_trace(request)
 
@@ -232,6 +233,27 @@ class ProxyEngine:
                 if remaining is not None and remaining <= 0:
                     raise TimeoutError()
 
+                # Create a nested child span for the upstream LLM completion call.
+                # It hangs under the root (gateway request) span via parent_span_id,
+                # so the flat span records form a 2-level tree when queried.
+                upstream_span_id = span_id
+                if self.trace_engine and trace_id:
+                    try:
+                        upstream_span_id = await self.trace_engine.start_span(
+                            SpanStartParams(
+                                provider=adapter.provider,
+                                model=normalized_req.model,
+                                parent_span_id=span_id,
+                                request_path=path,
+                                is_stream=normalized_req.stream,
+                                temperature=normalized_req.temperature,
+                                max_tokens=normalized_req.max_tokens,
+                            )
+                        )
+                        ctx.upstream_span_id = upstream_span_id
+                    except Exception:
+                        upstream_span_id = span_id
+
                 client = await self._get_client()
                 if normalized_req.stream:
                     forward_coro = self._forward_stream(client, upstream_url, upstream_headers, raw_body, adapter, ctx)
@@ -251,14 +273,24 @@ class ProxyEngine:
                 if self.trace_engine and trace_id:
                     from shared.models import SpanFinishParams
 
+                    if upstream_span_id != span_id:
+                        await self.trace_engine.finish_span(
+                            SpanFinishParams(
+                                trace_id=trace_id,
+                                span_id=upstream_span_id,
+                                status="timeout",
+                                error_message=f"Upstream request timed out after {self.settings.upstream_timeout}s",
+                                request_body=raw_body,
+                                upstream_url=upstream_url,
+                            )
+                        )
                     await self.trace_engine.finish_span(
                         SpanFinishParams(
                             trace_id=trace_id,
                             span_id=span_id,
                             status="timeout",
-                            error_message=f"Upstream request timed out after {self.settings.upstream_timeout}s",
+                            error_message="Upstream request timed out (request envelope)",
                             request_body=raw_body,
-                            upstream_url=upstream_url,
                         )
                     )
                 return JSONResponse(
@@ -273,14 +305,24 @@ class ProxyEngine:
                 if self.trace_engine and trace_id:
                     from shared.models import SpanFinishParams
 
+                    if upstream_span_id != span_id:
+                        await self.trace_engine.finish_span(
+                            SpanFinishParams(
+                                trace_id=trace_id,
+                                span_id=upstream_span_id,
+                                status="error",
+                                error_message=f"Cannot connect to upstream: {str(e)}",
+                                request_body=raw_body,
+                                upstream_url=upstream_url,
+                            )
+                        )
                     await self.trace_engine.finish_span(
                         SpanFinishParams(
                             trace_id=trace_id,
                             span_id=span_id,
                             status="error",
-                            error_message=f"Cannot connect to upstream: {str(e)}",
+                            error_message=f"Cannot connect to upstream (request envelope): {str(e)}",
                             request_body=raw_body,
-                            upstream_url=upstream_url,
                         )
                     )
                 return JSONResponse(
@@ -334,6 +376,16 @@ class ProxyEngine:
                 from shared.models import SpanFinishParams
 
                 try:
+                    if upstream_span_id and upstream_span_id != span_id:
+                        await self.trace_engine.finish_span(
+                            SpanFinishParams(
+                                trace_id=trace_id,
+                                span_id=upstream_span_id,
+                                status="error",
+                                error_message=f"Unhandled exception: {str(exc)}",
+                                request_body=raw_body,
+                            )
+                        )
                     await self.trace_engine.finish_span(
                         SpanFinishParams(
                             trace_id=trace_id,
@@ -379,12 +431,23 @@ class ProxyEngine:
             if self.trace_engine and ctx.trace_id:
                 from shared.models import SpanFinishParams
 
+                if ctx.upstream_span_id and ctx.upstream_span_id != ctx.span_id:
+                    await self.trace_engine.finish_span(
+                        SpanFinishParams(
+                            trace_id=ctx.trace_id,
+                            span_id=ctx.upstream_span_id,
+                            status="error",
+                            error_message=f"Upstream returned {response.status_code}",
+                            upstream_url=url,
+                            request_body=body,
+                        )
+                    )
                 await self.trace_engine.finish_span(
                     SpanFinishParams(
                         trace_id=ctx.trace_id,
                         span_id=ctx.span_id,
                         status="error",
-                        error_message=f"Upstream returned {response.status_code}",
+                        error_message=f"Upstream returned {response.status_code} (request envelope)",
                         upstream_url=url,
                         request_body=body,
                     )
@@ -429,10 +492,11 @@ class ProxyEngine:
                 SpanFinishParams,
             )
 
+            # Finish the upstream LLM child span with the full response payload.
             await self.trace_engine.finish_span(
                 SpanFinishParams(
                     trace_id=ctx.trace_id,
-                    span_id=ctx.span_id,
+                    span_id=ctx.upstream_span_id or ctx.span_id,
                     status="ok",
                     token_usage=normalized_resp.usage,
                     finish_reason=normalized_resp.finish_reason,
@@ -457,6 +521,17 @@ class ProxyEngine:
                     upstream_url=url,
                 )
             )
+
+            # Finish the root (gateway request) span as the envelope.
+            if ctx.upstream_span_id and ctx.upstream_span_id != ctx.span_id:
+                await self.trace_engine.finish_span(
+                    SpanFinishParams(
+                        trace_id=ctx.trace_id,
+                        span_id=ctx.span_id,
+                        status="ok",
+                        request_body=ctx.request.raw_body if ctx.request else None,
+                    )
+                )
 
         # Circuit breaker: non-stream response received successfully
         if self.circuit_breaker:

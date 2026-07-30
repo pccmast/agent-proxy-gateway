@@ -53,6 +53,7 @@ class TraceEngine:
         """
         self._store = store
         self._span_start_times: dict[str, float] = {}
+        self._finished_spans: set[str] = set()  # guards against double finish_span per process
 
     @property
     def store(self) -> TraceStore:
@@ -191,6 +192,12 @@ class TraceEngine:
         return span_id
 
     async def finish_span(self, params: SpanFinishParams) -> None:
+        # Idempotent guard: a span may only be finished once per process.
+        # Protects against double-finishing when an exit path and the stream
+        # finalizer both attempt to close the same span (root or child).
+        if params.span_id in self._finished_spans:
+            return
+        self._finished_spans.add(params.span_id)
         """完成一个 span 并持久化所有最终数据。
 
         内部处理流程:
