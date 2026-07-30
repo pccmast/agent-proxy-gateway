@@ -86,8 +86,9 @@ class SlidingWindowRateLimiter(Middleware):
         return ctx
 
     async def on_response(self, ctx: ResponseContext) -> ResponseContext:
-        # ResponseContext doesn't carry headers directly — fall back to "default" agent
-        agent_id = "default"
+        # agent_id 由 proxy 层在构造 ResponseContext 时填入 X-Agent-ID，
+        # 缺失则为 "default"（与 on_request 的 RPM 维度保持一致）。
+        agent_id = ctx.agent_id or "default"
         model = ctx.request.model or "unknown"
         now = time.monotonic()
 

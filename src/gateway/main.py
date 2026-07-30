@@ -27,6 +27,7 @@ from gateway.policy.store import PolicyStore
 from gateway.proxy.core import ProxyEngine
 from gateway.proxy.middleware import MiddlewareChain
 from gateway.trace.engine import TraceEngine
+from gateway.trace.pricing import load_pricing
 from gateway.trace.store import TraceStore
 from shared.config import load_config
 from shared.logging import get_logger, setup_logging
@@ -75,6 +76,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Policy
     _policy_store = PolicyStore(config_dir=app.state.settings.config_dir)
     _policy_store.reload()
+    # Load per-model pricing from config/pricing.yaml (safe: missing/malformed
+    # file falls back to built-in defaults, no error raised).
+    load_pricing(app.state.settings.config_dir)
+    # 热加载：GATEWAY_WATCH=1 时启动守护线程轮询 config YAML 变更并自动 reload
+    if os.environ.get("GATEWAY_WATCH", "0") == "1":
+        _policy_store.start_watching()
 
     # Trace
     _trace_store = TraceStore(db_path=app.state.settings.db_path)
@@ -157,6 +164,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         middleware_chain=chain,
         trace_engine=_trace_engine,
         circuit_breaker=_circuit_breaker,
+        token_counter=_token_counter,
     )
 
     # State
@@ -182,6 +190,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except asyncio.CancelledError:
             pass
         _cleanup_task = None
+    if _policy_store:
+        _policy_store.stop_watching()
     if _proxy_engine:
         await _proxy_engine.close()
     if _trace_store:

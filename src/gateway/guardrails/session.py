@@ -55,7 +55,7 @@ class SessionStore:
             if state is None:
                 state = SessionState(session_id=session_id)
                 self._sessions[session_id] = state
-                self._maybe_evict_lru()
+                self._evict_capacity()
             else:
                 state.last_activity = datetime.now(UTC)
             return state
@@ -66,6 +66,16 @@ class SessionStore:
         不创建新 session，不更新 last_activity。
         """
         return self._sessions.get(session_id)
+
+    def save(self, state: SessionState) -> None:
+        """持久化已 mutate 的 session。
+
+        内存版中 get_or_create 返回的是同一缓存对象，mutate 即生效，
+        故此方法为 no-op；SQLiteSessionStore 则会真正写回数据库。
+        两类存储统一暴露此方法，便于 GuardrailsEngine 在行为规则
+        跑完后统一调用。
+        """
+        return None  # noqa: RET502
 
     def reset(self, session_id: str) -> None:
         """重置指定 session（如检测到攻击后清空状态）。
@@ -100,8 +110,11 @@ class SessionStore:
     # 内部方法
     # ------------------------------------------------------------------
 
-    def _maybe_evict_lru(self) -> None:
-        """当活跃 session 数超过 max_sessions 时，驱逐最久未活动的一批。"""
+    def _evict_capacity(self) -> None:
+        """容量裁剪：活跃 session 数超过 max_sessions 时，按 last_activity 升序驱逐最旧的 20%。
+
+        注意这不是经典 O(1) 双向链表 LRU——仅按 last_activity 时间近似。
+        """
         if len(self._sessions) <= self._max_sessions:
             return
         evict_count = max(1, int(self._max_sessions * LRU_EVICT_RATIO))

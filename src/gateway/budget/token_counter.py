@@ -38,6 +38,11 @@ class TokenCounter:
         self._hourly: dict[str, int] = {}
         self._daily: dict[str, int] = {}
 
+        # agent_id → cumulative estimated cost (USD) for current hour/day.
+        # Updated alongside token counts; stays 0.0 when pricing is unavailable.
+        self._hourly_cost: dict[str, float] = {}
+        self._daily_cost: dict[str, float] = {}
+
         # Lazy-loaded tiktoken encoder
         self._encoders: dict[str, object] = {}
 
@@ -61,22 +66,27 @@ class TokenCounter:
 
     # ----------------------------------------------------------- budget tracking
 
-    def record(self, agent_id: str, tokens: int) -> None:
-        """Record token consumption for an agent."""
+    def record(self, agent_id: str, tokens: int, cost_usd: float = 0.0) -> None:
+        """Record token consumption (and optional estimated cost) for an agent."""
         self._hourly[agent_id] = self._hourly.get(agent_id, 0) + tokens
         self._daily[agent_id] = self._daily.get(agent_id, 0) + tokens
+        self._hourly_cost[agent_id] = self._hourly_cost.get(agent_id, 0.0) + cost_usd
+        self._daily_cost[agent_id] = self._daily_cost.get(agent_id, 0.0) + cost_usd
 
     def check_budget(self, agent_id: str) -> dict[str, object]:
         """Check current budget usage and return status.
 
         Returns dict with:
           - budget_ok: bool
-          - hourly_usage, daily_usage
+          - hourly_used, daily_used (token counts)
+          - hourly_cost_usd, daily_cost_usd (estimated $ cost)
           - hourly_warning, daily_warning
           - hourly_exceeded, daily_exceeded
         """
         hourly = self._hourly.get(agent_id, 0)
         daily = self._daily.get(agent_id, 0)
+        hourly_cost = self._hourly_cost.get(agent_id, 0.0)
+        daily_cost = self._daily_cost.get(agent_id, 0.0)
 
         hourly_ratio = hourly / max(self.max_tokens_per_hour, 1)
         daily_ratio = daily / max(self.max_tokens_per_day, 1)
@@ -86,9 +96,11 @@ class TokenCounter:
             "hourly_used": hourly,
             "hourly_limit": self.max_tokens_per_hour,
             "hourly_ratio": round(hourly_ratio, 3),
+            "hourly_cost_usd": round(hourly_cost, 6),
             "daily_used": daily,
             "daily_limit": self.max_tokens_per_day,
             "daily_ratio": round(daily_ratio, 3),
+            "daily_cost_usd": round(daily_cost, 6),
             "hourly_warning": hourly_ratio >= self.warning_threshold,
             "daily_warning": daily_ratio >= self.warning_threshold,
             "hourly_exceeded": hourly_ratio >= 1.0,

@@ -127,6 +127,8 @@ class CircuitBreaker:
                 "failure_count": self._failure_count,
                 "failure_threshold": self.failure_threshold,
                 "recovery_timeout": self.recovery_timeout,
+                "half_open_calls": self._half_open_calls,
+                "half_open_max_calls": self.half_open_max_calls,
                 "last_failure": self._last_failure_time,
                 "last_success": self._last_success_time,
             }

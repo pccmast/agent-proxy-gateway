@@ -33,12 +33,14 @@ class SSEInterceptor:
         stream_context: Any,  # RequestContext-like (has trace_id, span_id, request)
         trace_engine: Any = None,
         circuit_breaker: Any = None,
+        token_counter: Any = None,
     ):
         self.adapter = adapter
         self.middleware_chain = middleware_chain
         self.trace_context = stream_context
         self.trace_engine = trace_engine
         self.circuit_breaker = circuit_breaker
+        self.token_counter = token_counter
 
         # Accumulation state
         self.accumulated_content = ""
@@ -122,6 +124,7 @@ class SSEInterceptor:
             request=self.trace_context.request,
             accumulated_content=self.accumulated_content,
             guard_results=self.guard_results,
+            agent_id=self.trace_context.headers.get("X-Agent-ID", "default")
         )
 
         result = await self.middleware_chain.run_stream_chunk(chunk, stream_ctx)
@@ -221,5 +224,24 @@ class SSEInterceptor:
                     response_body=self.final_chunk_raw,
                 )
             )
+
+        # Budget tracking (best-effort, never raises). Mirrors the non-stream
+        # path: record token usage + estimated cost once per completed request.
+        if self.token_counter and self.total_usage is not None:
+            try:
+                from gateway.trace.pricing import estimate_cost
+
+                cost = estimate_cost(
+                    self.trace_context.request.model,
+                    self.total_usage.prompt_tokens,
+                    self.total_usage.completion_tokens,
+                )
+                self.token_counter.record(
+                    self.trace_context.headers.get("X-Agent-ID", "default"),
+                    self.total_usage.total_tokens,
+                    cost,
+                )
+            except Exception:
+                pass
 
         return []

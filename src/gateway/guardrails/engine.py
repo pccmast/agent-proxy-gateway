@@ -205,6 +205,7 @@ class GuardrailsEngine(Middleware):
             await self._apply_guard_result(result, ctx, "input")
 
         # 执行 behavioral_rules (input 阶段)
+        did_reset_session = False
         for rule in self._behavioral_rules:
             if not rule.is_enabled():
                 continue
@@ -215,7 +216,13 @@ class GuardrailsEngine(Middleware):
             if result.matches and result.rule_id == "multi-turn-jailbreak" and self._session_store and session:
                 if getattr(rule, "_threshold", 0) > 0 and result.confidence >= rule.confidence_threshold:
                     self._session_store.reset(session.session_id)
+                    did_reset_session = True
             await self._apply_guard_result(result, ctx, "input")
+
+        # 行为规则已就地 mutate session（如累加越狱升级分），必须写回 SQLite
+        # 才能跨请求累积；若本请求已触发 reset，则不回写以免重新落地旧状态。
+        if self._session_store and session and not did_reset_session:
+            self._session_store.save(session)
 
         return ctx
 
@@ -258,6 +265,10 @@ class GuardrailsEngine(Middleware):
                 continue
             result = await rule.check_output(output_text, session=session)
             await self._apply_guard_result(result, ctx, "output")
+
+        # 行为规则（如 tool_call_loop）已就地 mutate session，写回 SQLite 才能跨请求累积。
+        if self._session_store and session:
+            self._session_store.save(session)
 
         return ctx
 
@@ -372,13 +383,27 @@ class GuardrailsEngine(Middleware):
         return bool(self._input_rules or self._output_rules or self._behavioral_rules)
 
     def _get_session(self, ctx: RequestContext | ResponseContext | StreamContext) -> SessionState | None:
-        """从 context 获取或创建 session state."""
+        """从 context 获取或创建 session state.
+
+        优先使用客户端真实传入的 X-Session-ID 作为隔离键（与审计维度对齐）；
+        缺省时回退到 trace_id。绝不使用共享字符串作为 key —— 那会合并无关用户的
+        session，污染升级分与违规计数。
+        """
         if self._session_store is None:
             return None
-        session_id = getattr(ctx, "trace_id", None)
-        # Only use the caller-provided trace_id as a session key.
-        # NEVER fall back to a shared string — that would merge unrelated
-        # user sessions, corrupting escalation scores and violation counters.
+        session_id: str | None = None
+        # ResponseContext / StreamContext 通过 request.headers 携带原始请求头
+        request = getattr(ctx, "request", None)
+        if request is not None and getattr(request, "headers", None):
+            session_id = request.headers.get("X-Session-ID") or request.headers.get("x-session-id")
+        # RequestContext 直接带 headers
+        if not session_id:
+            headers = getattr(ctx, "headers", None)
+            if headers:
+                session_id = headers.get("X-Session-ID") or headers.get("x-session-id")
+        # 缺省回退到 trace_id（仍保证唯一，不回退到共享字符串）
+        if not session_id:
+            session_id = getattr(ctx, "trace_id", None)
         if not session_id:
             return None
         return self._session_store.get_or_create(session_id)

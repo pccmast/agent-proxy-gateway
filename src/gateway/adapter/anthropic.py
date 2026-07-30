@@ -96,6 +96,7 @@ class AnthropicAdapter(ProtocolAdapter):
             temperature=body.get("temperature"),
             max_tokens=body.get("max_tokens"),
             raw_body=raw_body,
+            headers=headers,
         )
 
     def normalize_response(self, raw_body: dict[str, Any]) -> NormalizedResponse:

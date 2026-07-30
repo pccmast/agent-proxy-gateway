@@ -83,7 +83,7 @@ class SQLiteSessionStore:
             if state is None:
                 state = SessionState(session_id=session_id)
                 self._save(state)
-                self._maybe_evict_lru()
+                self._evict_capacity()
             else:
                 state.last_activity = datetime.now(UTC)
                 self._save(state)
@@ -92,6 +92,20 @@ class SQLiteSessionStore:
     def get(self, session_id: str) -> SessionState | None:
         """Get existing session without creating or updating timestamps."""
         return self._load(session_id)
+
+    def save(self, state: SessionState) -> None:
+        """Persist a mutated session back to SQLite.
+
+        GuardrailsEngine mutates ``SessionState`` in place while running
+        behavioral rules (e.g. escalating jailbreak scores, appending
+        tool-call history). ``get_or_create`` reloads a *clean* copy from the
+        DB on every request, so without an explicit write-back those in-memory
+        mutations are lost and cross-request accumulation never survives.
+
+        Call this after behavioral rules have run to capture the updates.
+        """
+        with self._lock:
+            self._save(state)
 
     def reset(self, session_id: str) -> None:
         """Delete a session (e.g. after detecting an attack pattern)."""
@@ -174,8 +188,12 @@ class SQLiteSessionStore:
         )
         self._conn.commit()
 
-    def _maybe_evict_lru(self) -> None:
-        """Evict oldest sessions if over max_sessions."""
+    def _evict_capacity(self) -> None:
+        """容量裁剪：超过 max_sessions 时按 updated_at 删除最旧的 20%。
+
+        注意这不是经典 O(1) 双向链表 LRU——"最近最少使用"基于
+        updated_at 时间排序近似，仅用于把工作集压回上限、避免 DB 无限增长。
+        """
         row = self._conn.execute("SELECT COUNT(*) FROM guard_sessions").fetchone()
         if not row or int(row[0]) <= self._max_sessions:
             return

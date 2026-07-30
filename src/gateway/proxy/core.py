@@ -38,12 +38,14 @@ class ProxyEngine:
         middleware_chain: MiddlewareChain | None = None,
         trace_engine: Any = None,  # TraceEngine
         circuit_breaker: Any = None,  # CircuitBreaker
+        token_counter: Any = None,  # TokenCounter
     ):
         self.settings = settings
         self.adapter_registry = adapter_registry
         self.middleware_chain = middleware_chain or MiddlewareChain()
         self.trace_engine = trace_engine
         self.circuit_breaker = circuit_breaker
+        self.token_counter = token_counter
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -61,6 +63,23 @@ class ProxyEngine:
                 http2=True,
             )
         return self._client
+
+    def _record_budget(self, agent_id: str, model: str, usage: Any) -> None:
+        """Record token usage + estimated cost into the budget tracker.
+
+        Best-effort and never raises: a no-op when no token_counter is
+        configured, when usage is missing, or when the model is unknown to the
+        pricing table (cost then degrades to 0.0 without affecting the request).
+        """
+        if not self.token_counter or usage is None:
+            return
+        try:
+            from gateway.trace.pricing import estimate_cost
+
+            cost = estimate_cost(model, usage.prompt_tokens, usage.completion_tokens)
+            self.token_counter.record(agent_id, usage.total_tokens, cost)
+        except Exception:
+            pass
 
     async def handle_request(self, request: Request) -> Response:
         """Main entry point — handle all incoming proxy requests.
@@ -393,6 +412,7 @@ class ProxyEngine:
             request=ctx.request,
             response=normalized_resp,
             guard_results=list(ctx.guard_results),  # preserve request-phase hits
+            agent_id=ctx.headers.get("X-Agent-ID", ctx.headers.get("x-agent-id", "default")),
         )
 
         # Middleware chain (response)
@@ -443,6 +463,10 @@ class ProxyEngine:
             self.circuit_breaker.record_success()
             self._update_cb_gauge()
 
+        # Budget: record token usage + estimated cost (best-effort, non-blocking)
+        if self.token_counter:
+            self._record_budget(resp_ctx.agent_id, normalized_resp.model, normalized_resp.usage)
+
         return JSONResponse(
             content=raw_resp,
             status_code=response.status_code,
@@ -464,6 +488,7 @@ class ProxyEngine:
             stream_context=ctx,
             trace_engine=self.trace_engine,
             circuit_breaker=self.circuit_breaker,
+            token_counter=self.token_counter,
         )
 
         async def generate():

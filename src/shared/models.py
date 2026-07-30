@@ -47,6 +47,7 @@ class NormalizedRequest(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     raw_body: dict[str, object] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)  # 透传原始请求头，供护栏按 X-Session-ID 等维度隔离
 
 
 class NormalizedResponse(BaseModel):
@@ -269,6 +270,7 @@ class ResponseContext(BaseModel):
     response: NormalizedResponse
     guard_results: list[GuardResult] = Field(default_factory=list)
     eval_results: list[EvalResult] = Field(default_factory=list)
+    agent_id: str = ""  # 来源 agent（来自 X-Agent-ID 头），供 per-agent TPM 记账
 
 
 class StreamContext(BaseModel):
@@ -279,3 +281,4 @@ class StreamContext(BaseModel):
     request: NormalizedRequest
     accumulated_content: str = ""
     guard_results: list[GuardResult] = Field(default_factory=list)
+    agent_id: str = ""  # 来源 agent（来自 X-Agent-ID 头），供 per-agent TPM 记账
