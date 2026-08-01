@@ -80,7 +80,7 @@ class GuardrailsEngine(Middleware):
         self._behavioral_rules: list[BaseGuardRule] = []
         self._hit_stats: dict[str, dict[str, int]] = {}  # rule_id → {"block":N, "redact":N, "log":N, "total":N}
         self._category_stats: dict[str, int] = {}  # category → hit count (violence/self_harm/illegal/hate)
-        self._session_store = session_store
+        self._session_store: SessionStore | None = session_store
         self._audit_logger = audit_logger
 
         if rule_configs:

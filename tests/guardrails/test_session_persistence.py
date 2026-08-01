@@ -5,8 +5,6 @@ fix the engine never wrote those mutations back to SQLiteSessionStore, so
 escalation_score / tool-call history were reset to 0 on every request.
 """
 
-import time
-
 import pytest
 
 from gateway.guardrails.engine import GuardrailsEngine

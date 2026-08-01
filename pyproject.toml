@@ -51,6 +51,9 @@ ignore = [
 # benchmark 文件允许长行
 "benchmark/**" = ["E501"]
 "benchmark_v2/**" = ["E501"]
+# pricing.py 在 from __future__ 后有 pyright 文件级指令注释，ruff isort
+# 会把这组行当成同一个 import 块要求排序，但指令必须在 import 之前。
+"src/gateway/trace/pricing.py" = ["I001"]
 # 脚本和草稿文件允许长行
 "scripts/*" = ["E501", "E402"]
 "_new_main.py" = ["E501", "E701"]

@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from shared.logging import get_logger
 
 from .config import SessionState
+from .session import SessionStore
 
 logger = get_logger()
 
@@ -37,8 +38,13 @@ CREATE INDEX IF NOT EXISTS idx_guard_sessions_updated
 """
 
 
-class SQLiteSessionStore:
+class SQLiteSessionStore(SessionStore):
     """Session-level security state persisted in SQLite.
+
+    Implements the same contract as the in-memory :class:`SessionStore` so it
+    can be swapped in transparently (e.g. as ``GuardrailsEngine._session_store``),
+    but backs the state with SQLite so jailbreak escalation scores and
+    tool-call history survive gateway restarts.
 
     Uses a separate ``sqlite3`` connection (sync) to the same database
     file that TraceStore uses via ``aiosqlite``.  SQLite supports
@@ -53,8 +59,7 @@ class SQLiteSessionStore:
         ttl_seconds: int = DEFAULT_SESSION_TTL_SECONDS,
         max_sessions: int = MAX_ACTIVE_SESSIONS,
     ) -> None:
-        self._ttl_seconds = ttl_seconds
-        self._max_sessions = max_sessions
+        super().__init__(ttl_seconds=ttl_seconds, max_sessions=max_sessions)
         self._lock = threading.Lock()
         self._conn: sqlite3.Connection | None = None
         self._db_path = db_path
@@ -63,11 +68,18 @@ class SQLiteSessionStore:
 
     def initialize(self) -> None:
         """Open a sync SQLite connection and create the table (call once at startup)."""
-        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.executescript(CREATE_SESSIONS_TABLE)
-        self._conn.commit()
+        conn = sqlite3.connect(self._db_path, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.executescript(CREATE_SESSIONS_TABLE)
+        conn.commit()
+        self._conn = conn
         logger.info("sqlite_session_store_initialized", db_path=self._db_path)
+
+    @property
+    def _connection(self) -> sqlite3.Connection:
+        """Non-optional accessor — callers must run ``initialize()`` first."""
+        assert self._conn is not None, "SQLiteSessionStore accessed before initialize()"
+        return self._conn
 
     def close(self) -> None:
         if self._conn:
@@ -110,28 +122,28 @@ class SQLiteSessionStore:
     def reset(self, session_id: str) -> None:
         """Delete a session (e.g. after detecting an attack pattern)."""
         with self._lock:
-            self._conn.execute(
+            self._connection.execute(
                 "DELETE FROM guard_sessions WHERE session_id = ?",
                 (session_id,),
             )
-            self._conn.commit()
+            self._connection.commit()
 
     def evict_expired(self) -> int:
         """Delete all sessions older than TTL."""
         cutoff = datetime.now(UTC) - timedelta(seconds=self._ttl_seconds)
         with self._lock:
-            cursor = self._conn.execute(
+            cursor = self._connection.execute(
                 "DELETE FROM guard_sessions WHERE updated_at < ?",
                 (cutoff.isoformat(),),
             )
-            self._conn.commit()
+            self._connection.commit()
             return cursor.rowcount
 
     @property
     def active_count(self) -> int:
         """Current active session count."""
         try:
-            row = self._conn.execute("SELECT COUNT(*) FROM guard_sessions").fetchone()
+            row = self._connection.execute("SELECT COUNT(*) FROM guard_sessions").fetchone()
             return int(row[0]) if row else 0
         except Exception:
             return 0
@@ -141,7 +153,7 @@ class SQLiteSessionStore:
     def _load(self, session_id: str) -> SessionState | None:
         """Load a session from SQLite."""
         try:
-            row = self._conn.execute(
+            row = self._connection.execute(
                 "SELECT state_json, updated_at FROM guard_sessions WHERE session_id = ?",
                 (session_id,),
             ).fetchone()
@@ -182,11 +194,11 @@ class SQLiteSessionStore:
         state_json = json.dumps(data, ensure_ascii=False)
         now = datetime.now(UTC).isoformat()
 
-        self._conn.execute(
+        self._connection.execute(
             "INSERT OR REPLACE INTO guard_sessions (session_id, state_json, updated_at) VALUES (?, ?, ?)",
             (state.session_id, state_json, now),
         )
-        self._conn.commit()
+        self._connection.commit()
 
     def _evict_capacity(self) -> None:
         """容量裁剪：超过 max_sessions 时按 updated_at 删除最旧的 20%。
@@ -194,15 +206,15 @@ class SQLiteSessionStore:
         注意这不是经典 O(1) 双向链表 LRU——"最近最少使用"基于
         updated_at 时间排序近似，仅用于把工作集压回上限、避免 DB 无限增长。
         """
-        row = self._conn.execute("SELECT COUNT(*) FROM guard_sessions").fetchone()
+        row = self._connection.execute("SELECT COUNT(*) FROM guard_sessions").fetchone()
         if not row or int(row[0]) <= self._max_sessions:
             return
 
         evict_count = max(1, int(self._max_sessions * 0.2))
-        self._conn.execute(
+        self._connection.execute(
             "DELETE FROM guard_sessions WHERE session_id IN "
             "(SELECT session_id FROM guard_sessions "
             "ORDER BY updated_at ASC LIMIT ?)",
             (evict_count,),
         )
-        self._conn.commit()
+        self._connection.commit()

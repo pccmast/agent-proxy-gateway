@@ -23,8 +23,11 @@ site (currently not wired — see cheat sheet / interview notes).
 
 from __future__ import annotations
 
+# _PRICING is an intentionally-mutated module-level cache (hot-reloaded by
+# load_pricing); suppress pyright's "constant redefinition" false positive.
+# pyright: reportConstantRedefinition=false
+
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -91,17 +94,14 @@ _TIERS = ("input", "cached_input", "cache_creation", "output")
 
 def _per_million_to_per_token(table: dict[str, dict[str, float]]) -> dict[str, dict[str, float]]:
     """Convert a per-million pricing table into a per-token table."""
-    return {
-        model: {tier: value / 1_000_000 for tier, value in rates.items()}
-        for model, rates in table.items()
-    }
+    return {model: {tier: value / 1_000_000 for tier, value in rates.items()} for model, rates in table.items()}
 
 
 # Seed at import time so the module is usable even before load_pricing() runs.
 _PRICING = _per_million_to_per_token(DEFAULT_PRICING)
 
 
-def load_pricing(config_dir: Optional[str] = None) -> dict[str, dict[str, float]]:
+def load_pricing(config_dir: str | None = None) -> dict[str, dict[str, float]]:
     """Load per-model pricing from ``<config_dir>/pricing.yaml``.
 
     Safe by construction: a missing file or any parse/shape error falls back to
@@ -145,7 +145,7 @@ def load_pricing(config_dir: Optional[str] = None) -> dict[str, dict[str, float]
     return _PRICING
 
 
-def pricing_for(model: str) -> Optional[dict[str, float]]:
+def pricing_for(model: str) -> dict[str, float] | None:
     """Return the active per-token 4-tier rate dict for ``model`` or None if unknown."""
     return _PRICING.get(model)
 

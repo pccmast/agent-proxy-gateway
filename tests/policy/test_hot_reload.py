@@ -7,8 +7,6 @@ that stop_watching() cleanly terminates it.
 
 import time
 
-import pytest
-
 from gateway.policy.store import PolicyStore
 
 _MINIMAL_POLICY = """

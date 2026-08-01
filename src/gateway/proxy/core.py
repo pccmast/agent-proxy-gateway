@@ -97,7 +97,7 @@ class ProxyEngine:
 
         # --- Phase 1: Parse and normalize request ---
         try:
-            raw_body = await request.json()
+            raw_body: dict[str, object] = await request.json()
         except Exception:
             return JSONResponse(
                 status_code=400,

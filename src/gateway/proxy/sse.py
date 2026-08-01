@@ -124,7 +124,7 @@ class SSEInterceptor:
             request=self.trace_context.request,
             accumulated_content=self.accumulated_content,
             guard_results=self.guard_results,
-            agent_id=self.trace_context.headers.get("X-Agent-ID", "default")
+            agent_id=self.trace_context.headers.get("X-Agent-ID", "default"),
         )
 
         result = await self.middleware_chain.run_stream_chunk(chunk, stream_ctx)
@@ -157,7 +157,16 @@ class SSEInterceptor:
         completed_normally = self.stream_done
         status = "ok" if completed_normally else "abandoned"
         # Resolve the upstream-LLM child span id (falls back to root if none).
+        child_id = ""
         child_id = getattr(self.trace_context, "upstream_span_id", "") or self.trace_context.span_id
+
+        from shared.models import (
+            EvalScoreRecord,
+            GuardHitRecord,
+            NormalizedResponse,
+            ResponseContext,
+            SpanFinishParams,
+        )
 
         # Circuit breaker: stream completed normally — upstream is healthy
         if completed_normally and self.circuit_breaker:
@@ -166,14 +175,6 @@ class SSEInterceptor:
         # Build accumulated response for trace recording
         accumulated_content = self.accumulated_content
         if self.trace_engine and self.trace_context.trace_id:
-            from shared.models import (
-                EvalScoreRecord,
-                GuardHitRecord,
-                NormalizedResponse,
-                ResponseContext,
-                SpanFinishParams,
-            )
-
             normalized_resp = NormalizedResponse(
                 provider=self.trace_context.provider,
                 model=self.trace_context.request.model,
@@ -228,7 +229,8 @@ class SSEInterceptor:
             )
 
         # Finish the root (gateway request) span as the request envelope.
-        if self.trace_engine and self.trace_context.trace_id and child_id != self.trace_context.span_id:
+        child_span_differs = child_id != self.trace_context.span_id
+        if self.trace_engine and self.trace_context.trace_id and child_span_differs:
             try:
                 await self.trace_engine.finish_span(
                     SpanFinishParams(
