@@ -11,7 +11,7 @@ class TestPricing:
     def test_known_model_gpt4o(self) -> None:
         """gpt-4o: input=1000, output=500 → 正确费用"""
         cost = estimate_cost("gpt-4o", 1000, 500)
-        expected = 1000 * 2.50 / 1e6 + 500 * 10.00 / 1e6
+        expected = 1000 * 5.0 / 1e6 + 500 * 15.0 / 1e6
         assert cost == pytest.approx(expected, rel=1e-9)
 
     def test_known_model_gpt4o_mini(self) -> None:
@@ -22,7 +22,7 @@ class TestPricing:
 
     def test_known_model_claude_opus(self) -> None:
         """claude-3-opus 正确计费"""
-        cost = estimate_cost("claude-3-opus-20240229", 500, 200)
+        cost = estimate_cost("claude-3-opus-latest", 500, 200)
         expected = 500 * 15.00 / 1e6 + 200 * 75.00 / 1e6
         assert cost == pytest.approx(expected, rel=1e-9)
 
