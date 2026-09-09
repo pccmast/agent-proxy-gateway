@@ -153,6 +153,16 @@ class TraceStore:
         self._db = await aiosqlite.connect(str(self.db_path))
         self._db.row_factory = aiosqlite.Row
 
+        # 0. 开启 WAL：读者读主库、写者顺序追加 -wal 日志，读写不互斥，
+        #    且写入从"原地改页 + 双 fsync"变为"顺序追加 + 单 fsync"，提升并发写吞吐。
+        #    （这是压测定位到的瓶颈——每请求写 span 到 TraceStore 的全局写锁竞争）
+        await self._db.execute("PRAGMA journal_mode=WAL")
+        # WAL 模式下推荐 NORMAL：仅在 checkpoint 时 fsync，而非每次提交都 fsync；
+        # checkpoint 仍用 FULL 保证崩溃一致性。
+        await self._db.execute("PRAGMA synchronous=NORMAL")
+        # 写锁被占用时等待（而非立即 SQLITE_BUSY 报错），最多等 5s。
+        await self._db.execute("PRAGMA busy_timeout=5000")
+
         # 1. 创建基础表（幂等：IF NOT EXISTS）
         await self._db.executescript(CREATE_TABLES_SQL)
         await self._db.commit()

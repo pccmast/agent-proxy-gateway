@@ -14,7 +14,7 @@ import argparse
 import json
 import random
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class MockLLMHandler(BaseHTTPRequestHandler):
@@ -130,7 +130,7 @@ def main() -> None:
     MockLLMHandler.MIN_DELAY = args.min_delay / 1000.0
     MockLLMHandler.MAX_DELAY = args.max_delay / 1000.0
 
-    server = HTTPServer((args.host, args.port), MockLLMHandler)
+    server = ThreadingHTTPServer((args.host, args.port), MockLLMHandler)
     print(f"Mock LLM server running on http://{args.host}:{args.port}")
     print(f"Simulated upstream delay: {args.min_delay}-{args.max_delay}ms")
     print("Press Ctrl+C to stop")

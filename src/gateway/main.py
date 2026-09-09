@@ -100,7 +100,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Session store — persisted in SQLite so behavioural state
     # (jailbreak scores, tool-call history) survives restarts.
     # Uses a separate sync sqlite3 connection to avoid asyncio bridge issues.
-    session_store = SQLiteSessionStore(db_path=app.state.settings.db_path)
+    #
+    # IMPORTANT: session state lives in its OWN SQLite file (sessions.db), not
+    # TraceStore's gateway.db. Sharing one file between this sync sqlite3
+    # connection and TraceStore's aiosqlite connection causes write-lock
+    # contention under load: the sync connection busy-waits on the event loop,
+    # blocking it, which prevents the async writer from completing and releasing
+    # its write lock — a deadlock that surfaces as "database is locked"
+    # (verified under benchmark load).
+    session_store = SQLiteSessionStore(db_path="data/sessions.db")
     session_store.initialize()
     _guardrails_engine._session_store = session_store
 
