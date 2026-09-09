@@ -683,6 +683,9 @@ class TestTraceEngine:
         )
         child_span_id = await engine.start_span(params)
 
+        # 新模型：finish root span 才触发 flush 落库
+        await engine.finish_span(SpanFinishParams(trace_id=trace_id, span_id=root_span_id, status="ok"))
+
         span = await store.get_span(child_span_id)
         assert span is not None
         assert span["provider"] == "openai"
@@ -869,8 +872,6 @@ class TestTraceEngine:
                 token_usage=TokenUsage(prompt_tokens=1000, completion_tokens=500, total_tokens=1500),
             )
         )
-        span1 = await store.get_span(s1)
-        cost1 = float(span1.get("estimated_cost_usd", 0))
 
         # 第二个 span: 另一个调用
         s2 = await engine.start_span(params1)
@@ -881,6 +882,12 @@ class TestTraceEngine:
                 token_usage=TokenUsage(prompt_tokens=500, completion_tokens=200, total_tokens=700),
             )
         )
+
+        # 新模型：finish root 才 flush 落库，之后才能读到
+        await engine.finish_span(SpanFinishParams(trace_id=trace_id, span_id=root_id, status="ok"))
+
+        span1 = await store.get_span(s1)
+        cost1 = float(span1.get("estimated_cost_usd", 0))
         span2 = await store.get_span(s2)
         cost2 = float(span2.get("estimated_cost_usd", 0))
 
@@ -912,6 +919,10 @@ class TestTraceEngine:
         mock_req.url.path = "/v1/chat/completions"
 
         trace_id, span_id = await engine.start_trace(mock_req)
+
+        # 新模型：finish root span 触发 flush 后才落库
+        await engine.finish_span(SpanFinishParams(trace_id=trace_id, span_id=span_id, status="ok"))
+
         trace = await store.get_trace(trace_id)
 
         assert trace is not None
@@ -980,3 +991,99 @@ class TestTraceEngine:
         assert tree.children[0].provider == "openai"
         assert tree.children[0].model == "gpt-4o"
         assert tree.subtree_tokens == 1500
+
+
+# ==========================================================================
+# TestTraceSampling — 采样测试（优化点 1）
+# ==========================================================================
+
+
+class TestTraceSampling:
+    """Tests for sample_rate-based trace persistence (error-always-persisted)."""
+
+    @pytest.fixture
+    async def store(self, temp_db_path):
+        s = TraceStore(db_path=temp_db_path)
+        await s.initialize()
+        yield s
+        await s.close()
+
+    @staticmethod
+    def _mock_request():
+        from unittest.mock import AsyncMock
+
+        from fastapi import Request
+
+        mock_req = AsyncMock(spec=Request)
+        mock_req.headers = {}
+        mock_req.client = None
+        mock_req.url.path = "/v1/chat/completions"
+        return mock_req
+
+    @pytest.mark.asyncio
+    async def test_sample_rate_zero_skips_normal_request(self, store):
+        """sample_rate=0 时，正常完成的请求不落库"""
+        from gateway.trace.engine import TraceEngine
+
+        engine = TraceEngine(store, sample_rate=0.0)
+        trace_id, span_id = await engine.start_trace(self._mock_request())
+        await engine.finish_span(SpanFinishParams(trace_id=trace_id, span_id=span_id, status="ok"))
+
+        assert await store.get_trace(trace_id) is None
+        assert await store.get_span(span_id) is None
+
+    @pytest.mark.asyncio
+    async def test_sample_rate_zero_still_persists_error(self, store):
+        """sample_rate=0 时，错误请求仍强制落库（错误全落）"""
+        from gateway.trace.engine import TraceEngine
+
+        engine = TraceEngine(store, sample_rate=0.0)
+        trace_id, span_id = await engine.start_trace(self._mock_request())
+        await engine.finish_span(
+            SpanFinishParams(trace_id=trace_id, span_id=span_id, status="error", error_message="boom")
+        )
+
+        assert await store.get_trace(trace_id) is not None
+        span = await store.get_span(span_id)
+        assert span is not None
+        assert span["status"] == "error"
+
+    @pytest.mark.asyncio
+    async def test_sample_rate_zero_persists_blocked(self, store):
+        """sample_rate=0 时，blocked 请求也强制落库"""
+        from gateway.trace.engine import TraceEngine
+
+        engine = TraceEngine(store, sample_rate=0.0)
+        trace_id, span_id = await engine.start_trace(self._mock_request())
+        await engine.finish_span(SpanFinishParams(trace_id=trace_id, span_id=span_id, status="blocked"))
+
+        assert await store.get_trace(trace_id) is not None
+        assert await store.get_span(span_id) is not None
+
+
+# ==========================================================================
+# TestTraceAsyncWrite — 异步批量写盘测试（优化点 2+3）
+# ==========================================================================
+
+
+class TestTraceAsyncWrite:
+    """Tests for async batch write mode."""
+
+    @pytest.mark.asyncio
+    async def test_async_write_flushes_on_close(self, temp_db_path):
+        """async_write=True 时写入走队列，close 时 flush 到库"""
+        s = TraceStore(db_path=temp_db_path, async_write=True)
+        await s.initialize()
+
+        trace_id = str(uuid.uuid4())
+        span_id = str(uuid.uuid4())
+        await s.create_trace(trace_id, agent_id="agent-a")
+        await s.create_span(TraceSpan(trace_id=trace_id, span_id=span_id, provider="openai", model="gpt-4o"))
+        await s.close()
+
+        # 重新以同步模式打开，验证数据已落库
+        s2 = TraceStore(db_path=temp_db_path)
+        await s2.initialize()
+        assert await s2.get_trace(trace_id) is not None
+        assert await s2.get_span(span_id) is not None
+        await s2.close()

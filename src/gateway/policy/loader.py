@@ -32,6 +32,12 @@ class TraceConfig(BaseModel):
 
     db_path: str = "data/gateway.db"
     max_span_depth: int = 10
+    # 采样率：0.0-1.0。1.0 = 全采样（默认，保持向后兼容）；0.1 = 仅 10% 正常请求落库。
+    # 错误/超时/被拦截的请求无论采样率多少都强制落库（错误全落）。
+    sample_rate: float = 1.0
+    # 异步批量写盘：True 时 span 写入走内存队列 + 后台 worker 批量刷库，
+    # 主请求路径不阻塞。默认 False（同步写，便于测试与低流量部署）。
+    async_write: bool = False
 
 
 class GuardrailRuleConfig(BaseModel):

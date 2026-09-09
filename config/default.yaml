@@ -24,6 +24,10 @@ proxy:
 trace:
   db_path: "data/gateway.db"
   max_span_depth: 10
+  # 采样率：1.0 = 全采样；0.1 = 正常请求仅 10% 落库（错误/超时/拦截强制落库）
+  sample_rate: 1.0
+  # 异步批量写盘：false = 同步写；true = 内存队列 + 后台批量刷库（主路径不阻塞）
+  async_write: false
 
 # Guardrails Configuration — see guardrails.yaml for rules
 guardrails:

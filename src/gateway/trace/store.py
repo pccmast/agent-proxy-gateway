@@ -6,7 +6,9 @@ Schema v2 — extended per TRACE_REFACTOR_PLAN.md with P0-P3 fields + span_conte
 
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
@@ -130,15 +132,21 @@ class TraceStore:
 
     db_path: Path
 
-    def __init__(self, db_path: str = "data/gateway.db") -> None:
+    def __init__(self, db_path: str = "data/gateway.db", async_write: bool = False) -> None:
         """
         Args:
             db_path: SQLite 数据库文件路径，会自动创建父目录
+            async_write: True 时写操作走内存队列 + 后台 worker 批量刷库，
+                主请求路径不阻塞（异步 + 批量优化）；False（默认）时同步写，
+                语义简单、便于测试。
         """
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db: aiosqlite.Connection | None = None
         self.write_failures: int = 0  # incremented on every failed INSERT/UPDATE
+        self._async_write = async_write
+        self._write_queue: asyncio.Queue[Callable[[], Awaitable[None]]] | None = None
+        self._writer_task: asyncio.Task[None] | None = None
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -193,7 +201,57 @@ class TraceStore:
             await self._db.execute(idx_sql)
 
         await self._db.commit()
-        logger.info("trace_store_initialized", db_path=str(self.db_path))
+
+        # 5. 启动异步批量写盘器（若启用）
+        if self._async_write:
+            self._write_queue = asyncio.Queue()
+            self._writer_task = asyncio.create_task(self._writer_loop())
+
+        logger.info("trace_store_initialized", db_path=str(self.db_path), async_write=self._async_write)
+
+    async def _write(self, fn: Callable[[], Awaitable[None]]) -> None:
+        """执行一次写操作：异步模式入队，同步模式立即执行并提交。
+
+        传入的 ``fn`` 只负责 execute（不 commit），提交策略由本方法决定：
+        - 同步模式：execute 后立即 commit
+        - 异步模式：交给后台 worker 批量执行并统一 commit（减少 fsync 次数）
+        """
+        if self._write_queue is not None:
+            await self._write_queue.put(fn)
+        else:
+            await fn()
+            await self.db.commit()
+
+    async def _writer_loop(self) -> None:
+        """后台 worker：批量消费写队列，一个事务提交一批。
+
+        把多次分散的写合并成批量提交（优化点 3），并让主请求路径不阻塞在
+        写盘上（优化点 2）。一批最多 64 个写操作。
+        """
+        assert self._write_queue is not None
+        while True:
+            fn = await self._write_queue.get()
+            batch: list[Callable[[], Awaitable[None]]] = [fn]
+            # 非阻塞地尽可能多取，凑一批
+            while len(batch) < 64:
+                try:
+                    batch.append(self._write_queue.get_nowait())
+                except asyncio.QueueEmpty:
+                    break
+            try:
+                for op in batch:
+                    await op()
+                await self.db.commit()
+            except Exception as exc:
+                self.write_failures += 1
+                logger.error(
+                    "trace_batch_write_failed",
+                    error=str(exc),
+                    batch_size=len(batch),
+                )
+            finally:
+                for _ in batch:
+                    self._write_queue.task_done()
 
     async def _run_migrations(self) -> None:
         """幂等执行 ALTER TABLE ADD COLUMN。
@@ -228,7 +286,23 @@ class TraceStore:
         await self.db.commit()
 
     async def close(self) -> None:
-        """关闭数据库连接。幂等操作。"""
+        """关闭数据库连接。幂等操作。异步模式下先 flush 队列再关闭。"""
+        if self._writer_task is not None and self._write_queue is not None:
+            # 等待队列中的写操作全部落盘（最多 5s）
+            try:
+                await asyncio.wait_for(self._write_queue.join(), timeout=5.0)
+            except TimeoutError:
+                logger.warning(
+                    "trace_writer_flush_timeout",
+                    remaining=self._write_queue.qsize(),
+                )
+            self._writer_task.cancel()
+            try:
+                await self._writer_task
+            except asyncio.CancelledError:
+                pass
+            self._writer_task = None
+            self._write_queue = None
         if self._db:
             await self._db.close()
             self._db = None
@@ -261,20 +335,23 @@ class TraceStore:
         Raises:
             aiosqlite.Error — 写入失败
         """
-        await self.db.execute(
-            "INSERT OR REPLACE INTO traces "
-            "(trace_id, agent_id, session_id, client_ip, user_agent, status, created_at) "
-            "VALUES (?, ?, ?, ?, ?, 'ok', ?)",
-            (
-                trace_id,
-                agent_id,
-                session_id,
-                client_ip,
-                user_agent,
-                datetime.now(UTC).isoformat(),
-            ),
-        )
-        await self.db.commit()
+
+        async def _do() -> None:
+            await self.db.execute(
+                "INSERT OR REPLACE INTO traces "
+                "(trace_id, agent_id, session_id, client_ip, user_agent, status, created_at) "
+                "VALUES (?, ?, ?, ?, ?, 'ok', ?)",
+                (
+                    trace_id,
+                    agent_id,
+                    session_id,
+                    client_ip,
+                    user_agent,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+
+        await self._write(_do)
 
     async def get_trace(self, trace_id: str) -> dict[str, object] | None:
         """按主键查询 trace。
@@ -355,25 +432,25 @@ class TraceStore:
 
         if updates:
             params.append(trace_id)
-            await self.db.execute(
-                f"UPDATE traces SET {', '.join(updates)} WHERE trace_id = ?",
-                tuple(params),
-            )
-            await self.db.commit()
+
+            async def _do() -> None:
+                await self.db.execute(
+                    f"UPDATE traces SET {', '.join(updates)} WHERE trace_id = ?",
+                    tuple(params),
+                )
+
+            await self._write(_do)
 
     # ------------------------------------------------------------------
     # Span 操作
     # ------------------------------------------------------------------
 
-    async def create_span(self, span: TraceSpan) -> None:
-        """INSERT OR REPLACE 一条 span 记录。
+    def _span_insert(self, span: TraceSpan) -> tuple[str, tuple[object, ...]]:
+        """返回 span 的 INSERT OR REPLACE 语句与参数（不执行）。
 
-        Raises:
-            aiosqlite.IntegrityError — trace_id 不存在
-            aiosqlite.Error — 其他写入失败
+        供 create_span 与 persist_trace（批量写）复用，避免 SQL 重复。
         """
-        await self.db.execute(
-            """INSERT OR REPLACE INTO spans
+        sql = """INSERT OR REPLACE INTO spans
             (span_id, trace_id, parent_span_id, provider, model,
              request_hash, request_path, is_stream,
              status, prompt_tokens, completion_tokens, latency_ms,
@@ -386,40 +463,109 @@ class TraceStore:
              upstream_url, gateway_version,
              created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                span.span_id,
-                span.trace_id,
-                span.parent_span_id,
-                span.provider,
-                span.model,
-                span.request_hash,
-                span.request_path,
-                span.is_stream,
-                span.status,
-                span.token_usage.prompt_tokens if span.token_usage else 0,
-                span.token_usage.completion_tokens if span.token_usage else 0,
-                span.latency_ms,
-                span.ttft_ms,
-                span.estimated_cost_usd,
-                span.finish_reason,
-                span.error_message,
-                span.temperature,
-                span.max_tokens,
-                span.tool_calls_json,
-                span.content_id,
-                span.request_summary,
-                span.response_summary,
-                span.request_body_json,
-                span.response_body_json,
-                span.guard_hits_json if span.guard_hits_json else "[]",
-                span.eval_scores_json if span.eval_scores_json else "{}",
-                span.upstream_url,
-                span.gateway_version,
-                span.created_at.isoformat(),
-            ),
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+        params: tuple[object, ...] = (
+            span.span_id,
+            span.trace_id,
+            span.parent_span_id,
+            span.provider,
+            span.model,
+            span.request_hash,
+            span.request_path,
+            span.is_stream,
+            span.status,
+            span.token_usage.prompt_tokens if span.token_usage else 0,
+            span.token_usage.completion_tokens if span.token_usage else 0,
+            span.latency_ms,
+            span.ttft_ms,
+            span.estimated_cost_usd,
+            span.finish_reason,
+            span.error_message,
+            span.temperature,
+            span.max_tokens,
+            span.tool_calls_json,
+            span.content_id,
+            span.request_summary,
+            span.response_summary,
+            span.request_body_json,
+            span.response_body_json,
+            span.guard_hits_json if span.guard_hits_json else "[]",
+            span.eval_scores_json if span.eval_scores_json else "{}",
+            span.upstream_url,
+            span.gateway_version,
+            span.created_at.isoformat(),
         )
-        await self.db.commit()
+        return sql, params
+
+    async def create_span(self, span: TraceSpan) -> None:
+        """INSERT OR REPLACE 一条 span 记录。
+
+        Raises:
+            aiosqlite.IntegrityError — trace_id 不存在
+            aiosqlite.Error — 其他写入失败
+        """
+
+        async def _do() -> None:
+            sql, params = self._span_insert(span)
+            await self.db.execute(sql, params)
+
+        await self._write(_do)
+
+    async def persist_trace(
+        self,
+        trace_id: str,
+        agent_id: str | None,
+        session_id: str | None,
+        client_ip: str | None,
+        user_agent: str | None,
+        spans: list[TraceSpan],
+        total_tokens: int,
+        total_latency_ms: float,
+        estimated_cost_usd: float,
+        status: str,
+        contents: list[tuple[str, str, str, str]] | None = None,
+    ) -> None:
+        """一个事务写入整条 trace（trace + 所有 span + 大内容 + 聚合统计）。
+
+        供 TraceEngine 的 flush 使用：请求期间 span 数据在内存累积，结束时
+        一次性落库，避免多次分散写造成的写锁竞争与 fsync 开销。
+        """
+
+        async def _do() -> None:
+            # trace（含聚合统计，一次 INSERT OR REPLACE）
+            await self.db.execute(
+                "INSERT OR REPLACE INTO traces "
+                "(trace_id, agent_id, session_id, client_ip, user_agent, status, "
+                " total_tokens, total_latency_ms, estimated_cost_usd, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    trace_id,
+                    agent_id,
+                    session_id,
+                    client_ip,
+                    user_agent,
+                    status,
+                    total_tokens,
+                    total_latency_ms,
+                    estimated_cost_usd,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+            # 所有 span（完整数据）
+            for span in spans:
+                sql, params = self._span_insert(span)
+                await self.db.execute(sql, params)
+            # 大内容（>4KB 的外置 span_contents）
+            if contents:
+                for content_id, sid, req, resp in contents:
+                    await self.db.execute(
+                        "INSERT INTO span_contents "
+                        "(content_id, span_id, request_body, response_body, created_at) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (content_id, sid, req, resp, datetime.now(UTC).isoformat()),
+                    )
+
+        await self._write(_do)
 
     async def finish_span(
         self,
@@ -524,11 +670,14 @@ class TraceStore:
             params.append(gateway_version)
 
         params.append(span_id)
-        await self.db.execute(
-            f"UPDATE spans SET {', '.join(parts)} WHERE span_id = ?",
-            tuple(params),
-        )
-        await self.db.commit()
+
+        async def _do() -> None:
+            await self.db.execute(
+                f"UPDATE spans SET {', '.join(parts)} WHERE span_id = ?",
+                tuple(params),
+            )
+
+        await self._write(_do)
 
     async def get_spans(self, trace_id: str) -> list[dict[str, object]]:
         """获取 trace 下所有 span，按 created_at ASC。
@@ -570,18 +719,21 @@ class TraceStore:
             aiosqlite.IntegrityError — 主键冲突或 span_id 不存在
             aiosqlite.Error — 其他写入失败
         """
-        await self.db.execute(
-            "INSERT INTO span_contents (content_id, span_id, request_body, response_body, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (
-                content_id,
-                span_id,
-                request_body,
-                response_body,
-                datetime.now(UTC).isoformat(),
-            ),
-        )
-        await self.db.commit()
+
+        async def _do() -> None:
+            await self.db.execute(
+                "INSERT INTO span_contents (content_id, span_id, request_body, response_body, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    content_id,
+                    span_id,
+                    request_body,
+                    response_body,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+
+        await self._write(_do)
 
     async def get_span_content(self, content_id: str) -> dict[str, object] | None:
         """按主键查询大体积内容。

@@ -6,10 +6,12 @@ v2 — extended with content tiered storage, cost estimation, TTFT, and structur
 from __future__ import annotations
 
 import json
+import random
 import time
 import uuid
 from contextvars import ContextVar
-from typing import cast
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
 from fastapi import Request
 
@@ -35,6 +37,35 @@ _current_request_path: ContextVar[str] = ContextVar("request_path", default="")
 # 内容分级存储阈值（字节）
 INLINE_THRESHOLD = 4096
 
+# 状态优先级：数值越小越"严重"，用于聚合 trace 的最终状态
+_STATUS_PRIORITY = {
+    "error": 0,
+    "timeout": 1,
+    "abandoned": 2,
+    "blocked": 3,
+    "rate_limited": 4,
+    "ok": 5,
+}
+
+
+@dataclass
+class _PendingTrace:
+    """请求处理期间在内存中累积的完整 trace 数据（落库前暂存）。
+
+    新模型：start_trace / start_span 只往这里塞 span，finish_span 填最终数据，
+    root span 结束时一次性 flush 到 store，避免多次分散写库。
+    """
+
+    trace_id: str
+    agent_id: str | None
+    session_id: str | None
+    client_ip: str | None
+    user_agent: str | None
+    root_span_id: str
+    spans: dict[str, TraceSpan] = field(default_factory=dict)
+    contents: list[tuple[str, str, str, str]] = field(default_factory=list)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
 
 class TraceEngine:
     """Generates and manages traces and spans for the gateway (v2).
@@ -47,13 +78,18 @@ class TraceEngine:
     Supports content tiered storage, cost estimation, and structured guard/eval.
     """
 
-    def __init__(self, store: TraceStore) -> None:
+    def __init__(self, store: TraceStore, sample_rate: float = 1.0) -> None:
         """Args:
         store: 已调用 initialize() 的 TraceStore 实例.
+        sample_rate: 采样率 0.0-1.0，1.0=全采样（默认，向后兼容）。<1.0 时
+            正常请求按比例落库，而 error/timeout/blocked 请求无论采样率强制落库。
         """
         self._store = store
+        self._sample_rate = max(0.0, min(1.0, sample_rate))
         self._span_start_times: dict[str, float] = {}
         self._finished_spans: set[str] = set()  # guards against double finish_span per process
+        # 请求处理期间的完整 trace 数据暂存（root span 结束时统一 flush）
+        self._pending_traces: dict[str, _PendingTrace] = {}
 
     @property
     def store(self) -> TraceStore:
@@ -120,15 +156,6 @@ class TraceEngine:
         self.set_context(trace_id, span_id, agent_id)
         self._span_start_times[span_id] = time.monotonic()
 
-        await self._store.create_trace(
-            trace_id,
-            agent_id=agent_id,
-            session_id=session_id,
-            client_ip=client_ip,
-            user_agent=user_agent,
-        )
-
-        # Create root span record
         root_span = TraceSpan(
             trace_id=trace_id,
             span_id=span_id,
@@ -137,7 +164,17 @@ class TraceEngine:
             request_path=request_path,
             is_stream=0,  # root span 承载 request 级别信息
         )
-        await self._store.create_span(root_span)
+
+        # 内存缓冲：请求期间不写库，结束时统一 flush
+        self._pending_traces[trace_id] = _PendingTrace(
+            trace_id=trace_id,
+            agent_id=agent_id,
+            session_id=session_id,
+            client_ip=client_ip,
+            user_agent=user_agent,
+            root_span_id=span_id,
+            spans={span_id: root_span},
+        )
 
         logger.debug(
             "trace_started",
@@ -188,7 +225,9 @@ class TraceEngine:
             temperature=params.temperature,
             max_tokens=params.max_tokens,
         )
-        await self._store.create_span(span)
+        pending = self._pending_traces.get(trace_id)
+        if pending is not None:
+            pending.spans[span_id] = span
         return span_id
 
     async def finish_span(self, params: SpanFinishParams) -> None:
@@ -218,6 +257,13 @@ class TraceEngine:
         """
         latency_ms = self._compute_latency(params.span_id)
 
+        pending = self._pending_traces.get(params.trace_id)
+        if pending is None:
+            return
+        span = pending.spans.get(params.span_id)
+        if span is None:
+            return
+
         # --- 序列化 guard_hits / eval_scores ---
         guard_hits_json: str | None = None
         if params.guard_hits is not None:
@@ -237,7 +283,7 @@ class TraceEngine:
         elif params.tool_calls_json is not None:
             tool_calls_json = params.tool_calls_json
 
-        # --- 内容序列化 + 分级存储 ---
+        # --- 内容序列化 + 分级（大内容暂存，flush 时统一写 span_contents） ---
         request_json: str | None = None
         response_json: str | None = None
         if params.request_body is not None:
@@ -257,88 +303,44 @@ class TraceEngine:
                 response_body_inline = response_json
             else:
                 content_id = str(uuid.uuid4())
-                try:
-                    await self._store_large_content(content_id, params.span_id, req, resp)
-                except Exception as exc:
-                    logger.error(
-                        "store_large_content_failed",
-                        span_id=params.span_id,
-                        error=str(exc),
-                    )
-                    content_id = None
-                    # fallback: 截断后内联存储
-                    request_body_inline = _truncate_str(req, INLINE_THRESHOLD)
-                    response_body_inline = _truncate_str(resp, INLINE_THRESHOLD)
+                pending.contents.append((content_id, params.span_id, req, resp))
+                # fallback 内联截断（供无 content 加载时预览）
+                request_body_inline = _truncate_str(req, INLINE_THRESHOLD)
+                response_body_inline = _truncate_str(resp, INLINE_THRESHOLD)
 
         # --- 生成摘要 ---
         request_summary = _generate_summary(request_json, 200) if request_json else None
         response_summary = _generate_summary(response_json, 500) if response_json else None
 
-        # --- 费用计算 ---
+        # --- 费用计算（用内存 span 的 model，无需读库） ---
         cost = params.estimated_cost_usd
-        if cost == 0.0 and params.token_usage is not None:
-            # 从 SpanStartParams 中获取 model（需要从 context 中推断）
-            # 这里使用 trace 上下文中的信息
-            model = _current_request_path.get("") or ""  # fallback
-            # Actually, model is stored in the span during start_span.
-            # We need to extract it. For now, use a simplified approach:
-            # Re-read the span to get its model
-            try:
-                span_data = await self._store.get_span(params.span_id)
-                if span_data:
-                    model = str(span_data.get("model", ""))
-                    if model:
-                        cost = estimate_cost(
-                            model,
-                            params.token_usage.prompt_tokens,
-                            params.token_usage.completion_tokens,
-                        )
-            except Exception:
-                cost = 0.0
-
-        # --- 持久化到 store ---
-        try:
-            await self._store.finish_span(
-                span_id=params.span_id,
-                status=params.status,
-                token_usage=params.token_usage,
-                latency_ms=latency_ms,
-                ttft_ms=params.ttft_ms,
-                estimated_cost_usd=cost,
-                finish_reason=params.finish_reason,
-                error_message=params.error_message,
-                temperature=params.temperature,
-                max_tokens=params.max_tokens,
-                tool_calls_json=tool_calls_json,
-                guard_hits_json=guard_hits_json,
-                eval_scores_json=eval_scores_json,
-                request_summary=request_summary,
-                response_summary=response_summary,
-                content_id=content_id,
-                request_body_json=request_body_inline,
-                response_body_json=response_body_inline,
-                upstream_url=params.upstream_url,
-                gateway_version=params.gateway_version,
+        if cost == 0.0 and params.token_usage is not None and span.model:
+            cost = estimate_cost(
+                span.model,
+                params.token_usage.prompt_tokens,
+                params.token_usage.completion_tokens,
             )
 
-            # 聚合 trace 统计
-            await self._update_trace_stats(params.trace_id)
-        except Exception as exc:
-            self._store.write_failures += 1
-            try:
-                from gateway.metrics import trace_write_failures_total
-
-                trace_write_failures_total.set(self._store.write_failures)
-            except Exception:
-                pass
-            logger.error(
-                "finish_span_persist_failed",
-                trace_id=params.trace_id,
-                span_id=params.span_id,
-                error=str(exc),
-                total_failures=self._store.write_failures,
-            )
-            return
+        # --- 填充最终数据到内存 span（不写库） ---
+        span.status = params.status
+        span.token_usage = params.token_usage
+        span.latency_ms = latency_ms
+        span.ttft_ms = params.ttft_ms
+        span.estimated_cost_usd = cost
+        span.finish_reason = params.finish_reason
+        span.error_message = params.error_message
+        span.temperature = params.temperature
+        span.max_tokens = params.max_tokens
+        span.tool_calls_json = tool_calls_json
+        span.guard_hits_json = guard_hits_json if guard_hits_json is not None else "[]"
+        span.eval_scores_json = eval_scores_json if eval_scores_json is not None else "{}"
+        span.request_summary = request_summary
+        span.response_summary = response_summary
+        span.content_id = content_id
+        span.request_body_json = request_body_inline
+        span.response_body_json = response_body_inline
+        span.upstream_url = params.upstream_url
+        span.gateway_version = params.gateway_version
 
         logger.debug(
             "span_finished",
@@ -357,34 +359,33 @@ class TraceEngine:
         except Exception:
             pass
 
+        # root span 结束 → 统一 flush 整条 trace
+        if params.span_id == pending.root_span_id:
+            await self._flush_trace(pending)
+
     # ------------------------------------------------------------------
     # 僵尸 span 清理
     # ------------------------------------------------------------------
 
     async def cleanup_abandoned_spans(self, abandoned_minutes: int = 5) -> int:
-        """Mark spans as abandoned that were started but never finished.
+        """把内存中超过阈值仍未 flush 的 trace 标记为 abandoned 并强制落库。
 
-        Detection heuristic: spans where ``latency_ms = 0`` and
-        ``status = \"ok\"`` and ``created_at`` is older than *abandoned_minutes*
-        ago are virtually certain to be abandoned — they were INSERTed by
-        ``start_trace`` but never reached ``finish_span``.
-
-        Args:
-            abandoned_minutes: 超出多长时间未完成则视为废弃。
-
-        Returns:
-            被标记为 abandoned 的 span 数量。
+        新模型下 start 不再写库，因此"start 了但没 finish"的 trace 只存在于内存。
+        按创建时间扫描，超时的统一标记 abandoned 并 flush（用于诊断挂起/崩溃请求）。
         """
-        marked = await self._store.mark_abandoned_spans(
-            abandoned_minutes=abandoned_minutes,
-        )
-        if marked > 0:
+        cutoff = datetime.now(UTC) - timedelta(minutes=abandoned_minutes)
+        abandoned = [p for p in self._pending_traces.values() if p.created_at < cutoff]
+        for p in abandoned:
+            for s in p.spans.values():
+                s.status = "abandoned"
+            await self._flush_trace(p, force=True)
+        if abandoned:
             logger.warning(
                 "abandoned_spans_cleaned",
-                count=marked,
+                count=len(abandoned),
                 threshold_minutes=abandoned_minutes,
             )
-        return marked
+        return len(abandoned)
 
     # ------------------------------------------------------------------
     # 查询方法
@@ -437,6 +438,70 @@ class TraceEngine:
     # 内部方法
     # ------------------------------------------------------------------
 
+    def _should_sample(self) -> bool:
+        """采样决策：sample_rate=1.0 恒采样；否则按比例随机采样。"""
+        if self._sample_rate >= 1.0:
+            return True
+        return random.random() < self._sample_rate
+
+    async def _flush_trace(self, pending: _PendingTrace, force: bool = False) -> None:
+        """请求结束：聚合统计 + 采样决策 + 一次性落库整条 trace。
+
+        force=True 时无条件落库（用于 abandoned 清理）。
+        """
+        spans = list(pending.spans.values())
+
+        # 聚合统计（token / 延迟 / 费用 / 最终状态）
+        total_tokens = 0
+        total_latency = 0.0
+        total_cost = 0.0
+        final_status = "ok"
+        for s in spans:
+            if s.token_usage is not None:
+                total_tokens += s.token_usage.prompt_tokens + s.token_usage.completion_tokens
+            total_latency += s.latency_ms
+            total_cost += s.estimated_cost_usd
+            if _STATUS_PRIORITY.get(s.status, 5) < _STATUS_PRIORITY.get(final_status, 5):
+                final_status = s.status
+
+        # 采样决策：错误/超时/拦截 100% 落，否则按 sample_rate
+        should_persist = force or final_status in ("error", "timeout", "blocked") or self._should_sample()
+
+        # 无论是否落库都从内存移除，避免泄漏
+        self._pending_traces.pop(pending.trace_id, None)
+
+        if not should_persist:
+            return
+
+        try:
+            await self._store.persist_trace(
+                trace_id=pending.trace_id,
+                agent_id=pending.agent_id,
+                session_id=pending.session_id,
+                client_ip=pending.client_ip,
+                user_agent=pending.user_agent,
+                spans=spans,
+                total_tokens=total_tokens,
+                total_latency_ms=total_latency,
+                estimated_cost_usd=total_cost,
+                status=final_status,
+                contents=pending.contents or None,
+            )
+        except Exception as exc:
+            self._store.write_failures += 1
+            try:
+                from gateway.metrics import trace_write_failures_total
+
+                trace_write_failures_total.set(self._store.write_failures)
+            except Exception:
+                pass
+            logger.error(
+                "flush_trace_failed",
+                trace_id=pending.trace_id,
+                error=str(exc),
+                total_failures=self._store.write_failures,
+            )
+
     def _compute_latency(self, span_id: str) -> float:
         """计算 span 耗时（ms）."""
         start = self._span_start_times.pop(span_id, None)
@@ -444,61 +509,10 @@ class TraceEngine:
             return 0.0
         return (time.monotonic() - start) * 1000.0
 
-    async def _update_trace_stats(self, trace_id: str) -> None:
-        """聚合所有 span 的 stats 到 trace 记录."""
-        spans = await self._store.get_spans(trace_id)
-        if not spans:
-            return
-
-        total_tokens = 0
-        total_latency = 0.0
-        total_cost = 0.0
-        final_status = "ok"
-        status_priority = {
-            "error": 0,
-            "timeout": 1,
-            "abandoned": 2,
-            "blocked": 3,
-            "rate_limited": 4,
-            "ok": 5,
-        }
-
-        for s in spans:
-            total_tokens += int(cast(int, s.get("prompt_tokens", 0))) + int(cast(int, s.get("completion_tokens", 0)))
-            total_latency += float(cast(float, s.get("latency_ms", 0)))
-            total_cost += float(cast(float, s.get("estimated_cost_usd", 0)))
-
-            s_status = cast(str, s.get("status", "ok"))
-            if status_priority.get(s_status, 5) < status_priority.get(final_status, 5):
-                final_status = s_status
-
-        await self._store.update_trace(
-            trace_id=trace_id,
-            total_tokens=total_tokens,
-            total_latency_ms=total_latency,
-            estimated_cost_usd=total_cost,
-            status=final_status,
-        )
-
     @staticmethod
     def _should_store_inline(request_json: str, response_json: str) -> bool:
         """判断内容是否应内联存储."""
         return len(request_json) + len(response_json) <= INLINE_THRESHOLD
-
-    async def _store_large_content(
-        self,
-        content_id: str,
-        span_id: str,
-        request_json: str,
-        response_json: str,
-    ) -> None:
-        """写入 span_contents 表."""
-        await self._store.insert_span_content(
-            content_id=content_id,
-            span_id=span_id,
-            request_body=request_json,
-            response_body=response_json,
-        )
 
 
 # ------------------------------------------------------------------

@@ -115,9 +115,44 @@ class SQLiteSessionStore(SessionStore):
         mutations are lost and cross-request accumulation never survives.
 
         Call this after behavioral rules have run to capture the updates.
+
+        Optimization: only writes when the business state fields actually
+        changed — most requests don't mutate the session (no jailbreak signal
+        matched), so this avoids an unnecessary write (and its write-lock) on
+        the hot path.
         """
         with self._lock:
-            self._save(state)
+            if self._is_dirty(state):
+                self._save(state)
+
+    def _is_dirty(self, state: SessionState) -> bool:
+        """Return True if the session's business state differs from the DB.
+
+        Only compares business fields (escalation_score / history /
+        tool_call_history / consecutive_same_tool / total_tool_calls).
+        ``last_activity`` is excluded: it's liveness metadata maintained by
+        ``get_or_create``, not business state.
+        """
+        try:
+            row = self._connection.execute(
+                "SELECT state_json FROM guard_sessions WHERE session_id = ?",
+                (state.session_id,),
+            ).fetchone()
+        except Exception:
+            return True
+        if not row:
+            return True
+        try:
+            old = json.loads(row[0])
+        except Exception:
+            return True
+        return (
+            float(old.get("escalation_score", 0.0)) != state.escalation_score
+            or old.get("history", []) != state.history
+            or old.get("tool_call_history", []) != state.tool_call_history
+            or int(old.get("consecutive_same_tool", 0)) != state.consecutive_same_tool
+            or int(old.get("total_tool_calls", 0)) != state.total_tool_calls
+        )
 
     def reset(self, session_id: str) -> None:
         """Delete a session (e.g. after detecting an attack pattern)."""

@@ -84,9 +84,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         _policy_store.start_watching()
 
     # Trace
-    _trace_store = TraceStore(db_path=app.state.settings.db_path)
+    trace_cfg = _policy_store.trace_config()
+    _trace_store = TraceStore(
+        db_path=app.state.settings.db_path,
+        async_write=trace_cfg.async_write,
+    )
     await _trace_store.initialize()
-    _trace_engine = TraceEngine(store=_trace_store)
+    _trace_engine = TraceEngine(store=_trace_store, sample_rate=trace_cfg.sample_rate)
 
     # Adapters
     adapter_registry = create_registry()

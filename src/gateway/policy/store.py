@@ -12,7 +12,7 @@ import yaml
 
 from shared.logging import get_logger
 
-from .loader import BudgetConfig, EvalConfig, GatewayPolicy, GuardrailsConfig, RateLimitConfig
+from .loader import BudgetConfig, EvalConfig, GatewayPolicy, GuardrailsConfig, RateLimitConfig, TraceConfig
 
 logger = get_logger()
 
@@ -53,6 +53,9 @@ class PolicyStore:
 
     def eval_config(self) -> EvalConfig:
         return self.policy.eval
+
+    def trace_config(self) -> TraceConfig:
+        return self.policy.trace
 
     # -------------------------------------------------------------- YAML loading
 
