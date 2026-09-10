@@ -52,3 +52,6 @@ benchmark_v2/results/
 # Documentation drafts
 projects_md/
 tests/API_TEST_PLAN.md
+
+# Interview prep materials (local only, not for remote)
+benchmark/INTERVIEW_TALK.md
